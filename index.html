@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Zumbizeira</title>
+<link rel="stylesheet" href="game.css">
+<link rel="manifest" href="manifest.json" />
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+</head>
+<body>
+
+  <div id="rotate-device-overlay">
+    <p>Gire o celular para a posição horizontal 🔄</p>
+  </div>
+
+  <section id="lobby">
+    <img src="img/logo.png" style="max-width: 50%; height: auto;"/>
+
+    <div class="status">
+      <p id="status">Conectando...</p>
+      <p id="playerCount"></p>
+      <div class="time hidden" id="time">
+      <span>Tempo:</span>
+      <div class="time-options" id="timeOptions">
+        <div class="time-option" data-minutes="2">
+          <div class="time-tri"></div>
+          <img src="img/tempo-2.png"/>
+        </div>
+        <div class="time-option" data-minutes="4">
+          <div class="time-tri"></div>
+          <img src="img/tempo-4.png"/>
+        </div>
+        <div class="time-option" data-minutes="6">
+          <div class="time-tri"></div>
+          <img src="img/tempo-6.png"/>
+        </div>
+        <div class="time-option" data-minutes="0">
+          <div class="time-tri"></div>
+          <img src="img/tempo-infinito.png"/>
+        </div>
+      </div>
+    </div>
+    <button id="joinBtn" disabled>Entrar</button>
+    <div class="menuBtns">
+      <button id="startBtn" class="hidden">INICIAR</button>
+      <button id="lobbyLeaveBtn" class="hidden">Sair</button>
+    </div>
+  </div>
+
+  </section>
+ 
+  <section id="game" class="hidden">
+    <div id="hud" class="hidden">
+      <span id="timer">--</span>
+    </div>
+    <canvas id="canvas" width="1376" height="768"></canvas>
+ 
+    <div id="joystickZone">
+      <div id="joystickThumb"></div>
+    </div>
+    <button id="sprintBtn">­</button>
+ 
+    <div id="gameOver" class="hidden">
+      <p id="gameOverText"></p>
+      <button id="restartBtn" class="hidden">Reiniciar</button>
+      <button id="leaveBtn">Sair da sala</button>
+    </div>
+  </section>
+
+  <script src="firebase-app-compat.js"></script>
+  <script src="firebase-firestore-compat.js"></script>
+  <script src="peerjs.js"></script>
+  <script src="config.js"></script>
+  <script src="rooms-data.js"></script>
+  <script src="sprites-data.js"></script>
+  <script src="audio.js"></script>
+  <script src="network.js"></script>
+  <script src="game.js"></script>
+  
+</body>
+</html>
