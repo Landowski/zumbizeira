@@ -1,738 +1,731 @@
-document.addEventListener("deviceready", async () => {
-  const { StatusBar } = Capacitor.Plugins;
-  await StatusBar.hide();
-});
+/*
+ * Camada de rede do Zumbi Party.
+ *
+ * Topologia: estrela. Todo mundo conecta só com o host; o host é
+ * autoritativo (posição, colisão, infecção, luz, transição de cômodo).
+ * Firestore serve SÓ pra descobrir quem é o host agora (escrita rara).
+ * A partida em si trafega inteira via WebRTC/PeerJS.
+ *
+ * Depende de rooms-data.js (ROOMS, ROOM_W, ROOM_H, INITIAL_ROOM) já
+ * carregado antes deste script.
+ */
 
-const statusEl = document.getElementById("status");
-const playerCountEl = document.getElementById("playerCount");
-const joinBtn = document.getElementById("joinBtn");
-const startBtn = document.getElementById("startBtn");
-const lobbyEl = document.getElementById("lobby");
-const gameEl = document.getElementById("game");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const timerEl = document.getElementById("timer");
-const timeHud = document.getElementById("hud");
-const timeEl = document.getElementById("time");
-const timeOptions = document.querySelectorAll(".time-option");
-const joystickZone = document.getElementById("joystickZone");
-const joystickThumb = document.getElementById("joystickThumb");
-const sprintBtn = document.getElementById("sprintBtn");
-const lobbyLeaveBtn = document.getElementById("lobbyLeaveBtn");
-const gameOverEl = document.getElementById("gameOver");
-const gameOverText = document.getElementById("gameOverText");
-const restartBtn = document.getElementById("restartBtn");
-const leaveBtn = document.getElementById("leaveBtn");
+const Network = (() => {
+  const ROOM_ID = "main";
+  const MAX_PLAYERS = 6;
+  const COLORS = ["azul", "amarelo", "laranja", "rosa", "roxo", "verde"];
 
-const MIN_PLAYERS = 2;
+  const HEARTBEAT_INTERVAL = 2000;
+  const HOST_HEARTBEAT_INTERVAL = 4000;
+  const HOST_TIMEOUT_MS = 10000;
+  const CLIENT_TIMEOUT_MS = 6000;
 
-let joined = false;
-let latestState = [];
-let latestRoomLights = {};
-let selectedDurationMin = 2;
-const prevInfected = new Map(); // id -> bool, pra disparar o som só na transição
-const prevRoomLightOn = {}; // roomId -> bool, idem
+  const PLAYER_W = 54, PLAYER_H = 96;
+  const SURVIVOR_SPEED = 280; // px/s
+  const SPRINT_MULT = 2.8;
+  const SPRINT_DURATION = 1000;
+  const SPRINT_COOLDOWN = 3000;
+  const TICK_MS = 50; // 20Hz
+  const DEFAULT_DURATION_MIN = 2;
+  const BLACKOUT_MS = 8000;
+  const TRANSFORM_MS = 3000;
 
-timeOptions.forEach((opt) => {
-  opt.addEventListener("click", () => {
-    selectedDurationMin = Number(opt.dataset.minutes);
-    timeOptions.forEach((o) => o.classList.toggle("selected", o === opt));
-    playSfx(SFX.tempo);
-  });
-});
-document.querySelector('.time-option[data-minutes="2"]').classList.add("selected");
+  let currentDurationMin = DEFAULT_DURATION_MIN; // 0 = sem limite de tempo
 
-// --- carregamento de imagem com fallback (mesmo padrão dos protótipos de cômodo) ---
-const imageCache = new Map();
-function loadImageWithFallback(src, w, h, label) {
-  if (imageCache.has(src)) return imageCache.get(src);
-  const img = new Image();
-  const state = { img, ready: false };
-  img.onload = () => (state.ready = true);
-  img.src = src;
-  state.w = w;
-  state.h = h;
-  state.label = label;
-  imageCache.set(src, state);
-  return state;
-}
+  let tickInterval = null;
+  let gameEndTime = 0;
+  let roomLights = {}; // roomId -> { on, blackoutEndsAt } — só pra cômodos com interruptor
 
-function drawWithFallback(state, x, y, flip) {
-  if (state.ready) {
-    ctx.save();
-    if (flip) {
-      ctx.translate(x + state.w, y);
-      ctx.scale(-1, 1);
-      ctx.drawImage(state.img, 0, 0, state.w, state.h);
-    } else {
-      ctx.drawImage(state.img, x, y, state.w, state.h);
-    }
-    ctx.restore();
-    return;
-  }
-  ctx.save();
-  ctx.strokeStyle = "#888";
-  ctx.setLineDash([6, 4]);
-  ctx.strokeRect(x, y, state.w, state.h);
-  ctx.fillStyle = "#444";
-  ctx.fillRect(x, y, state.w, state.h);
-  ctx.restore();
-}
+  let db, roomRef;
+  let peer = null;
+  let myPeerId = null;
+  let isHost = false;
 
-function drawObject(o) {
-  const sprite = loadImageWithFallback(o.src, o.w, o.h, o.src);
-  drawWithFallback(sprite, o.x, o.y, o.flip);
-}
+  let colorQueue = [...COLORS];
+  const players = new Map(); // peerId -> { color, conn, lastSeen, room, x, y, infected, alive, facing, input, sprintUntil, sprintCooldownUntil }
 
-// pré-carrega tudo (fundos, objetos, interruptores, sprites de jogador) —
-// evita "pop" de placeholder na primeira vez que se entra num cômodo
-function preloadAssets() {
-  Object.values(ROOMS).forEach((room) => {
-    loadImageWithFallback(room.bg, ROOM_W, ROOM_H, room.bg);
-    (room.staticBack || []).forEach((o) => loadImageWithFallback(o.src, o.w, o.h, o.src));
-    (room.staticFront || []).forEach((o) => loadImageWithFallback(o.src, o.w, o.h, o.src));
-    (room.ySort || []).forEach((o) => loadImageWithFallback(o.src, o.w, o.h, o.src));
-    if (room.lightSwitch) {
-      loadImageWithFallback(room.lightSwitch.onSprite, room.lightSwitch.w, room.lightSwitch.h, room.lightSwitch.onSprite);
-      loadImageWithFallback(room.lightSwitch.offSprite, room.lightSwitch.w, room.lightSwitch.h, room.lightSwitch.offSprite);
-    }
-  });
-  Object.values(PLAYER_SPRITES).forEach((set) => {
-    loadImageWithFallback(set.base.src, set.base.w, set.base.h, set.base.src);
-    loadImageWithFallback(set.infectado.src, set.infectado.w, set.infectado.h, set.infectado.src);
-    loadImageWithFallback(set.zumbi.src, set.zumbi.w, set.zumbi.h, set.zumbi.src);
-  });
-}
-preloadAssets();
+  let hostConn = null;
+  let myColor = null;
 
-// --- animação dos jogadores: só anima enquanto a posição está mudando de
-// verdade entre um GAME_STATE e outro; parado fica congelado no frame 0 ---
-const animState = new Map(); // id -> { lastX, lastY, moving }
-
-// --- Sistema de partículas de fumaça pixelada ---
-const dustParticles = [];
-
-function createDustParticle(x, y) {
-  dustParticles.push({
-    x: x + (Math.random() * 10 - 5),
-    y: y + (Math.random() * 4 - 2),
-    size: Math.random() > 0.5 ? 8 : 12, // Dobrado: era 4 ou 6, agora é 8 ou 12
-    life: 1.0,                        
-    vx: (Math.random() - 0.5) * 0.5,
-    vy: -Math.random() * 0.5 - 0.2     
-  });
-}
-
-function updateAndDrawDust() {
-  for (let i = dustParticles.length - 1; i >= 0; i--) {
-    const p = dustParticles[i];
-    p.life -= 0.04; // velocidade de desaparecimento
-    p.x += p.vx;
-    p.y += p.vy;
-
-    if (p.life <= 0) {
-      dustParticles.splice(i, 1);
-      continue;
-    }
-
-    ctx.save();
-    // Usa opacidade com cor cinza/branca pixelada
-    ctx.fillStyle = `rgba(200, 200, 200, ${p.life * 0.5})`;
-    // Math.floor para manter a posição travada na grade de pixels
-    ctx.fillRect(Math.floor(p.x), Math.floor(p.y), p.size, p.size);
-    ctx.restore();
-  }
-}
-
-function updateAnimState(players) {
-  const seen = new Set();
-  players.forEach((p) => {
-    seen.add(p.id);
-    const prev = animState.get(p.id);
-    const moving = prev ? Math.hypot(p.x - prev.lastX, p.y - prev.lastY) > 0.5 : false;
-    animState.set(p.id, { lastX: p.x, lastY: p.y, moving });
-  });
-  [...animState.keys()].forEach((id) => {
-    if (!seen.has(id)) animState.delete(id);
-  });
-}
-
-function drawPlayerSprite(p) {
-  const spriteSet = PLAYER_SPRITES[p.color];
-  if (!spriteSet) return;
-  const spec = p.transforming ? spriteSet.infectado : p.infected ? spriteSet.zumbi : spriteSet.base;
-  const sheet = loadImageWithFallback(spec.src, spec.w, spec.h, spec.src);
-  const frameW = spec.w / spec.frames;
-  const frameH = spec.h;
-
-  const anim = animState.get(p.id);
-  const defaultFrame = Math.min(2, spec.frames - 1);
-  const frameIndex = anim && anim.moving ? Math.floor(performance.now() / 125) % spec.frames : defaultFrame;
-  const flip = p.facing === "left";
-
-  // ancora: base do sprite alinhada com a base da hitbox, centralizado horizontalmente nela
-  const drawX = p.x + (Network.PLAYER_W - frameW) / 2;
-  const drawY = p.y + Network.PLAYER_H - frameH;
-
-  // --- ADICIONE AQUI O DESENHO DA SOMBRA NO CHÃO ---
-  // Desenha ANTES do sprite para ficar por baixo
-  ctx.save();
-  // Posiciona o centro da elipse na base horizontal e vertical do jogador
-  const centerX = drawX + frameW / 2;
-  const centerY = p.y + Network.PLAYER_H; 
-  
-  // Define a cor preta com opacidade (0.3 = 30%)
-  ctx.fillStyle = "rgba(0, 0, 0, 0.3)"; 
-  
-  ctx.beginPath();
-  // Desenha a elipse: elipse(x, y, raioX, raioY, rotação, anguloInicial, anguloFinal)
-  // Ajuste os valores 20 (largura) e 8 (altura) se necessário para o tamanho da sombra
-  ctx.ellipse(centerX, centerY, 20, 8, 0, 0, 2 * Math.PI);
-  ctx.fill();
-  ctx.restore();
-  // -------------------------------------------------
-
-  if (sheet.ready) {
-    ctx.save();
-    if (flip) {
-      ctx.translate(drawX + frameW, drawY);
-      ctx.scale(-1, 1);
-      ctx.drawImage(sheet.img, frameIndex * frameW, 0, frameW, frameH, 0, 0, frameW, frameH);
-    } else {
-      ctx.drawImage(sheet.img, frameIndex * frameW, 0, frameW, frameH, drawX, drawY, frameW, frameH);
-    }
-    ctx.restore();
-  } else {
-    ctx.fillStyle = PLAYER_COLOR_HEX[p.color] || "#888";
-    ctx.fillRect(p.x, p.y, Network.PLAYER_W, Network.PLAYER_H);
+  function startWorkerInterval(ms, onTick) {
+    const code = `setInterval(() => postMessage(1), ${ms});`;
+    const worker = new Worker(URL.createObjectURL(new Blob([code], { type: "application/javascript" })));
+    worker.onmessage = onTick;
+    return () => worker.terminate();
   }
 
-  // indicador de "sou eu": triangulozinho branco acima da própria cabeça
-  if (p.id === Network.myPeerId) {
-    ctx.beginPath();
-    ctx.moveTo(p.x + Network.PLAYER_W / 2, p.y - 4);
-    ctx.lineTo(p.x + Network.PLAYER_W / 2 - 7, p.y - 16);
-    ctx.lineTo(p.x + Network.PLAYER_W / 2 + 7, p.y - 16);
-    ctx.closePath();
-    ctx.fillStyle = "#fff";
-    ctx.fill();
-  }
-}
-
-function drawRoomScene(roomId, roomPlayers) {
-  const room = ROOMS[roomId];
-  if (!room) return;
-
-  drawWithFallback(loadImageWithFallback(room.bg, ROOM_W, ROOM_H, room.bg), 0, 0);
-
-  (room.staticBack || []).forEach(drawObject);
-
-  if (room.lightSwitch) {
-    drawWithFallback(
-      loadImageWithFallback(room.lightSwitch.onSprite, room.lightSwitch.w, room.lightSwitch.h, room.lightSwitch.onSprite),
-      room.lightSwitch.x,
-      room.lightSwitch.y
-    );
-  }
-
-  // --- EMISSÃO DE FUMAÇA DURANTE O SPRINT ---
-  roomPlayers.forEach((p) => {
-    const anim = animState.get(p.id);
-    // Emite fumaça apenas se estiver se movendo E com sprint ativo E não transformando
-    if (p.sprinting && anim && anim.moving && !p.transforming) {
-      // Posição dos pés do jogador
-      const feetX = p.x + Network.PLAYER_W / 2;
-      const feetY = p.y + Network.PLAYER_H;
-      
-      // Emite partículas espaçadas
-      if (Math.random() < 0.6) {
-        createDustParticle(feetX, feetY);
-      }
-    }
-  });
-
-  const entities = [
-    ...roomPlayers.map((p) => ({ bottom: p.y + Network.PLAYER_H, draw: () => drawPlayerSprite(p) })),
-    ...(room.ySort || []).map((o) => ({
-      bottom: o.y + o.h - o.h * (o.ySortOffsetFromBottom || 0),
-      draw: () => drawObject(o),
-    })),
-  ];
-  entities.sort((a, b) => a.bottom - b.bottom);
-  
-  // Desenha a fumaça antes das entidades para ficar no chão abaixo do Y-Sort
-  updateAndDrawDust();
-
-  entities.forEach((e) => e.draw());
-
-  (room.staticFront || []).forEach(drawObject);
-  drawToast();
-}
-
-function renderPlayerList(players) {
-  playerCountEl.textContent = `${players.length} / ${Network.MAX_PLAYERS} na sala`;
-}
-
-// --- Sistema de Toast ---
-let activeToast = null; // { text, expiresAt }
-
-function showToast(text, durationMs = 3000) {
-  activeToast = {
-    text,
-    expiresAt: performance.now() + durationMs,
+  const callbacks = {
+    onRoomUpdate: () => {},
+    onStateSync: () => {},
+    onColorAssigned: () => {},
+    onRoomFull: () => {},
+    onHostLost: () => {},
+    onError: () => {},
+    onGameStart: () => {},
+    onGameState: () => {},
+    onGameOver: () => {},
+    onPromotedToHost: () => {},
   };
-}
 
-function drawToast() {
-  if (!activeToast) return;
-  const now = performance.now();
-  if (now > activeToast.expiresAt) {
-    activeToast = null;
-    return;
+  function genId() {
+    return "p-" + Math.random().toString(36).slice(2, 10);
   }
 
-  const text = activeToast.text;
-  ctx.save();
-  ctx.font = "bold 18px sans-serif"; // ou a fonte retro/pixel do seu jogo
-  const textWidth = ctx.measureText(text).width;
+  // --- geometria / colisão (mesma lógica dos protótipos de cômodo) ---
+
+  function playerBox(x, y) {
+    return { x, y, w: PLAYER_W, h: PLAYER_H };
+  }
+
+  // Faixa fina na base do personagem, usada SÓ pra detectar infecção — não
+  // pra colisão de parede (essa continua com o corpo inteiro). Evita que a
+  // cabeça de quem está "mais atrás" (Y-sort) toque o pé de quem está na
+  // frente e conte como encostão.
+  const FEET_H = 22;
+  function feetBox(x, y) {
+    return { x, y: y + PLAYER_H - FEET_H, w: PLAYER_W, h: FEET_H };
+  }
+
+  function rectsOverlap(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  function diagonalLineY(d, x) {
+    const xMin = Math.min(d.x1, d.x2), xMax = Math.max(d.x1, d.x2);
+    if (x < xMin || x > xMax) return null;
+    const t = (x - d.x1) / (d.x2 - d.x1);
+    return d.y1 + t * (d.y2 - d.y1);
+  }
+
+  function diagonalBandAt(d, x) {
+    const ly = diagonalLineY(d, x);
+    if (ly == null) return null;
+    return d.side === "below" ? [ly, ly + d.thickness] : [ly - d.thickness, ly];
+  }
+
+  function collidesWithDiagonal(d, box) {
+    const xStart = Math.max(box.x, Math.min(d.x1, d.x2));
+    const xEnd = Math.min(box.x + box.w, Math.max(d.x1, d.x2));
+    if (xStart > xEnd) return false;
+    for (let x = xStart; x < xEnd; x += 6) {
+      const band = diagonalBandAt(d, x);
+      if (band && box.y < band[1] && box.y + box.h > band[0]) return true;
+    }
+    const band = diagonalBandAt(d, xEnd);
+    return !!(band && box.y < band[1] && box.y + box.h > band[0]);
+  }
+
+  function collidesInRoom(roomId, box) {
+    const room = ROOMS[roomId];
+    if (!room) return false;
+    if (room.diagonals.some((d) => collidesWithDiagonal(d, box))) return true;
+    return room.walls.some((w) => rectsOverlap(box, w));
+  }
+
+// Acha um ponto livre de colisão no cômodo.
+function spawnFreePoint(roomId) {
+  // Limite Y superior seguro para a Sala não nascer colada na parede/porta
+  const minY = roomId === "sala" ? 160 : 0;
+  const maxY = ROOM_H - PLAYER_H;
+
+  for (let i = 0; i < 300; i++) {
+    const c = {
+      x: Math.random() * (ROOM_W - PLAYER_W),
+      y: minY + Math.random() * (maxY - minY),
+    };
+    if (!collidesInRoom(roomId, playerBox(c.x, c.y))) return c;
+  }
   
-  const paddingX = 20;
-  const paddingY = 10;
-  const boxW = textWidth + paddingX * 2;
-  const boxH = 36;
-  const boxX = (ROOM_W - boxW) / 2;
-  const boxY = 40; // Exibe no topo central da tela
-
-  // Fundo do Toast
-  ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
-  ctx.fillRect(boxX, boxY, boxW, boxH);
-
-  // Borda pixelada
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(boxX, boxY, boxW, boxH);
-
-  // Texto
-  ctx.fillStyle = "#ffffff";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, ROOM_W / 2, boxY + boxH / 2);
-
-  ctx.restore();
-}
-
-// --- callbacks de rede ---
-
-Network.on("onRoomUpdate", (data) => {
-  if (joined) return;
-
-  const hostAlive = Network.isHostAlive(data);
-
-  if (!hostAlive) {
-    statusEl.textContent = data
-      ? "O dono da sala caiu. Seja o novo dono."
-      : "Sala vazia. Seja o primeiro a entrar.";
-    joinBtn.disabled = false;
-    playerCountEl.textContent = "";
-    return;
-  }
-
-  if (data.status === "playing") {
-    statusEl.textContent = "Partida em andamento. Aguarde a próxima.";
-    joinBtn.disabled = true;
-    return;
-  }
-
-  const full = data.playerCount >= Network.MAX_PLAYERS;
-  playerCountEl.textContent = `${data.playerCount} / ${Network.MAX_PLAYERS} na sala`;
-  statusEl.textContent = full ? "Sala cheia." : "Sala aberta.";
-  joinBtn.disabled = full;
-});
-
-Network.on("onStateSync", (players) => {
-  joined = true;
-  joinBtn.classList.add("hidden");
-  lobbyLeaveBtn.classList.remove("hidden");
-  renderPlayerList(players);
-
-  if (Network.isHost) {
-    statusEl.textContent = "Você é o dono da sala.";
-    startBtn.classList.remove("hidden");
-    startBtn.disabled = players.length < MIN_PLAYERS;
-    startBtn.textContent =
-      players.length < MIN_PLAYERS
-        ? `Iniciar(${MIN_PLAYERS})`
-        : "Iniciar";
-    timeEl.classList.remove("hidden");
-  } else {
-    statusEl.textContent = "Aguardando o dono iniciar.";
-    startBtn.classList.add("hidden");
-    timeEl.classList.add("hidden");
-  }
-});
-
-Network.on("onColorAssigned", () => {
-  statusEl.textContent = "Você entrou na sala.";
-});
-
-Network.on("onRoomFull", () => {
-  statusEl.textContent = "Sala cheia. Aguarde uma vaga.";
-  joinBtn.disabled = true;
-});
-
-Network.on("onHostLost", () => {
-  joined = false;
-  statusEl.textContent = "Dono da sala desconectado. Reconectando...";
-  joinBtn.classList.remove("hidden");
-  lobbyLeaveBtn.classList.add("hidden");
-  startBtn.classList.add("hidden");
-  setTimeout(() => Network.join(), 500 + Math.random() * 1000);
-});
-
-Network.on("onPromotedToHost", () => {
-  statusEl.textContent = "O dono da sala saiu: você é o novo dono.";
-});
-
-Network.on("onGameStart", (musicTrack) => {
-  lobbyEl.classList.add("hidden");
-  gameEl.classList.remove("hidden");
-  gameOverEl.classList.add("hidden");
-  startMusic(musicTrack);
-});
-
-Network.on("onGameState", ({ players, timeLeft, roomLights }) => {
-  updateAnimState(players);
-  latestState = players;
-  latestRoomLights = roomLights || {};
-
-  const me = players.find((p) => p.id === Network.myPeerId);
-  const myRoom = me && me.room;
-
-  // som de infecção: só na transição pra infectado, só se aconteceu no meu cômodo
-  players.forEach((p) => {
-    const was = prevInfected.get(p.id);
-    if (was === false && p.infected === true) {
-      
-      const colorName = p.color.charAt(0).toUpperCase() + p.color.slice(1);
-      const message = `${colorName} foi infectado!`;
-
-      // Toast do Capacitor com fallback para console.log no PC
-      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Toast) {
-        window.Capacitor.Plugins.Toast.show({
-          text: message,
-          duration: 'short',
-          position: 'top'
-        });
-      } else {
-        showToast(message);
-      }
-
-      if (p.room === myRoom) {
-        playSfx(SFX.infectado);
-      }
+  // Varredura em grade respeitando o minY
+  for (let y = minY; y < maxY; y += 20) {
+    for (let x = 0; x < ROOM_W - PLAYER_W; x += 20) {
+      if (!collidesInRoom(roomId, playerBox(x, y))) return { x, y };
     }
-    prevInfected.set(p.id, p.infected);
-  });
+  }
+  return { x: 100, y: 200 };
+}
 
-  // som do interruptor: só na transição on<->off, só se for o meu cômodo
-  Object.keys(latestRoomLights).forEach((rid) => {
-    const isOn = latestRoomLights[rid].on;
-    const was = prevRoomLightOn[rid];
-    if (was !== undefined && was !== isOn && rid === myRoom) {
-      playSfx(SFX.interruptor);
+// Acha um ponto livre e longe de "others"
+function spawnFarFrom(roomId, others, minDistance) {
+  const minY = roomId === "sala" ? 160 : 0;
+  const maxY = ROOM_H - PLAYER_H;
+  
+  let best = null, bestDist = -1;
+  for (let i = 0; i < 300; i++) {
+    const c = {
+      x: Math.random() * (ROOM_W - PLAYER_W),
+      y: minY + Math.random() * (maxY - minY),
+    };
+    if (collidesInRoom(roomId, playerBox(c.x, c.y))) continue;
+    const d = others.length ? Math.min(...others.map((o) => Math.hypot(o.x - c.x, o.y - c.y))) : Infinity;
+    if (d >= minDistance) return c;
+    if (d > bestDist) {
+      bestDist = d;
+      best = c;
     }
-    prevRoomLightOn[rid] = isOn;
-  });
-
-  // passo/corrida: só quem está no meu cômodo agora, liga/desliga por jogador
-  const roomPlayerIds = new Set();
-  players.forEach((p) => {
-    if (p.room !== myRoom) return;
-    roomPlayerIds.add(p.id);
-    const anim = animState.get(p.id);
-    const moving = !!(anim && anim.moving) && !p.transforming;
-    setLoopPlaying(`${p.id}:andando`, SFX.andando, moving && !p.sprinting);
-    setLoopPlaying(`${p.id}:corrida`, SFX.corrida, moving && !!p.sprinting);
-  });
-  // quem não está mais no meu cômodo (saiu, ou eu que troquei de cômodo) para de tocar
-  loopAudios.forEach((_, key) => {
-    const id = key.split(":")[0];
-    if (!roomPlayerIds.has(id)) setLoopPlaying(key, "", false);
-  });
-
-  if (timeLeft === null) {
-    timeHud.classList.add("hidden");
-  } else {
-    timeHud.classList.remove("hidden");
-    timerEl.classList.remove("hidden");
-    timerEl.textContent = `${timeLeft}s`;
   }
-
-  if (me) {
-    sprintBtn.classList.toggle("on-cooldown", !me.sprintReady);
-  }
-});
-
-Network.on("onGameOver", ({ reason, survivors }) => {
-  stopMusic();
-  stopAllLoopAudios();
-  gameOverEl.classList.remove("hidden");
-  const youSurvived = survivors.includes(Network.myPeerId);
-  gameOverText.textContent =
-    reason === "lastSurvivor"
-      ? youSurvived
-        ? "Você sobreviveu!"
-        : "Os zumbis venceram."
-      : youSurvived
-      ? `Tempo esgotado! Você e mais ${Math.max(0, survivors.length - 1)} sobreviveram!`
-      : "Tempo esgotado! Os zumbis perderam.";
-
-  restartBtn.classList.toggle("hidden", !Network.isHost);
-  if (Network.isHost) {
-    const enough = latestState.length >= MIN_PLAYERS;
-    restartBtn.disabled = !enough;
-    restartBtn.textContent = enough
-      ? "Reiniciar"
-      : `Reiniciar (precisa de ${MIN_PLAYERS}+)`;
-  }
-});
-
-Network.on("onError", (err) => {
-  console.error(err);
-  statusEl.textContent = "Erro de conexão. Recarregue.";
-});
-
-// --- ações do usuário ---
-
-joinBtn.addEventListener("click", () => {
-  joinBtn.disabled = true;
-  statusEl.textContent = "Conectando...";
-  Network.join();
-});
-
-startBtn.addEventListener("click", () => {
-  Network.startGame(selectedDurationMin);
-});
-
-lobbyLeaveBtn.addEventListener("click", () => {
-  Network.leaveRoom();
-});
-
-restartBtn.addEventListener("click", () => {
-  Network.restartGame();
-});
-
-leaveBtn.addEventListener("click", () => {
-  Network.leaveRoom();
-});
-
-// --- input: teclado ---
-
-const keys = new Set();
-window.addEventListener("keydown", (e) => keys.add(e.key.toLowerCase()));
-window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
-
-window.addEventListener("keydown", (e) => {
-  if (e.key.toLowerCase() === "l") Network.toggleLight();
-});
-
-function keyboardVector() {
-  let dx = 0, dy = 0;
-  if (keys.has("arrowleft") || keys.has("a")) dx -= 1;
-  if (keys.has("arrowright") || keys.has("d")) dx += 1;
-  if (keys.has("arrowup") || keys.has("w")) dy -= 1;
-  if (keys.has("arrowdown") || keys.has("s")) dy += 1;
-  return { dx, dy };
+  return best || spawnFreePoint(roomId);
 }
 
-// --- input: joystick virtual (híbrido touch + mouse, igual ao Golzinho Livre) ---
-// --- input: joystick virtual (isolado por toque) ---
+  function init() {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    roomRef = db.collection("rooms").doc(ROOM_ID);
+    myPeerId = genId();
 
-let joystickActive = false;
-let joystickVec = { dx: 0, dy: 0 };
-let joystickTouchId = null; // Guarda o identificador único do toque do joystick
-const JOY_RADIUS = 55;
-
-function updateJoystick(clientX, clientY) {
-  const rect = joystickZone.getBoundingClientRect();
-  const cx = rect.left + rect.width / 2;
-  const cy = rect.top + rect.height / 2;
-  let dx = clientX - cx;
-  let dy = clientY - cy;
-  const dist = Math.hypot(dx, dy);
-  if (dist > JOY_RADIUS) {
-    dx = (dx / dist) * JOY_RADIUS;
-    dy = (dy / dist) * JOY_RADIUS;
-  }
-  joystickThumb.style.transform = `translate(${dx}px, ${dy}px)`;
-  joystickVec = { dx: dx / JOY_RADIUS, dy: dy / JOY_RADIUS };
-}
-
-function resetJoystick() {
-  joystickActive = false;
-  joystickTouchId = null;
-  joystickVec = { dx: 0, dy: 0 };
-  joystickThumb.style.transform = "translate(0, 0)";
-}
-
-function joystickStart(e) {
-  if (e.touches) {
-    // Pega o primeiro toque que iniciou dentro do joystickZone
-    const touch = e.changedTouches[0];
-    joystickTouchId = touch.identifier;
-    joystickActive = true;
-    updateJoystick(touch.clientX, touch.clientY);
-  } else {
-    joystickActive = true;
-    updateJoystick(e.clientX, e.clientY);
-  }
-}
-
-function joystickMove(e) {
-  if (!joystickActive) return;
-  if (e.touches) {
-    // Procura exatamente o toque que iniciou o joystick
-    for (let i = 0; i < e.touches.length; i++) {
-      if (e.touches[i].identifier === joystickTouchId) {
-        e.preventDefault();
-        updateJoystick(e.touches[i].clientX, e.touches[i].clientY);
-        break;
-      }
-    }
-  } else {
-    updateJoystick(e.clientX, e.clientY);
-  }
-}
-
-function joystickEnd(e) {
-  if (!joystickActive) return;
-  if (e.touches) {
-    // Só reseta se o toque finalizado for o do próprio joystick
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      if (e.changedTouches[i].identifier === joystickTouchId) {
-        resetJoystick();
-        break;
-      }
-    }
-  } else {
-    resetJoystick();
-  }
-}
-
-joystickZone.addEventListener("touchstart", joystickStart, { passive: false });
-window.addEventListener("touchmove", joystickMove, { passive: false });
-window.addEventListener("touchend", joystickEnd);
-window.addEventListener("touchcancel", joystickEnd);
-
-joystickZone.addEventListener("mousedown", joystickStart);
-window.addEventListener("mousemove", joystickMove);
-window.addEventListener("mouseup", resetJoystick);
-
-// --- input: sprint (botão) — perto do interruptor vira toggle de luz em vez de sprint ---
-
-function nearLightSwitch() {
-  const me = latestState.find((p) => p.id === Network.myPeerId);
-  if (!me) return false;
-  const room = ROOMS[me.room];
-  const sw = room && room.lightSwitch;
-  if (!sw) return false;
-  return (
-    me.x < sw.x + sw.w &&
-    me.x + Network.PLAYER_W > sw.x &&
-    me.y < sw.y + sw.h &&
-    me.y + Network.PLAYER_H > sw.y
-  );
-}
-
-let sprintHeld = false;
-
-function handleSprintPress() {
-  if (nearLightSwitch()) {
-    Network.toggleLight();
-    return;
-  }
-  sprintHeld = true;
-}
-
-// --- input: sprint (botão) ---
-
-sprintBtn.addEventListener("touchstart", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  handleSprintPress();
-}, { passive: false });
-
-sprintBtn.addEventListener("touchend", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  sprintHeld = false;
-}, { passive: false });
-
-sprintBtn.addEventListener("touchcancel", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  sprintHeld = false;
-}, { passive: false });
-
-sprintBtn.addEventListener("mousedown", handleSprintPress);
-window.addEventListener("mouseup", () => (sprintHeld = false));
-window.addEventListener("keydown", (e) => {
-  if (e.key === " ") sprintHeld = true;
-});
-window.addEventListener("keyup", (e) => {
-  if (e.key === " ") sprintHeld = false;
-});
-
-// manda o input atual pro host no mesmo ritmo do tick (20Hz).
-// Worker interval em vez de setInterval: não sofre throttling de aba
-// em segundo plano, então o movimento não trava quando a janela perde foco.
-function startWorkerIntervalLocal(ms, onTick) {
-  const code = `setInterval(() => postMessage(1), ${ms});`;
-  const worker = new Worker(URL.createObjectURL(new Blob([code], { type: "application/javascript" })));
-  worker.onmessage = onTick;
-  return worker;
-}
-
-startWorkerIntervalLocal(50, () => {
-  if (gameEl.classList.contains("hidden")) return;
-  const kb = keyboardVector();
-  const dx = joystickActive ? joystickVec.dx : kb.dx;
-  const dy = joystickActive ? joystickVec.dy : kb.dy;
-  Network.sendInput(dx, dy, sprintHeld);
-});
-
-// --- render loop ---
-
-function drawFrame() {
-  requestAnimationFrame(drawFrame);
-  if (gameEl.classList.contains("hidden")) return;
-
-  const me = latestState.find((p) => p.id === Network.myPeerId);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!me) return; // ainda sem estado de jogo
-
-  const roomId = me.room;
-  const room = ROOMS[roomId];
-  if (!room) return;
-
-  const lights = latestRoomLights[roomId];
-  const lightsOff = room.lightSwitch && lights && lights.on === false;
-
-  if (lightsOff) {
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    drawWithFallback(
-      loadImageWithFallback(room.lightSwitch.offSprite, room.lightSwitch.w, room.lightSwitch.h, room.lightSwitch.offSprite),
-      room.lightSwitch.x,
-      room.lightSwitch.y
+    roomRef.onSnapshot(
+      (doc) => callbacks.onRoomUpdate(doc.exists ? doc.data() : null),
+      (err) => callbacks.onError(err)
     );
-    return;
   }
 
-  const roomPlayers = latestState.filter((p) => p.room === roomId);
-  drawRoomScene(roomId, roomPlayers);
-}
-requestAnimationFrame(drawFrame);
+  function isHostAlive(data) {
+    return !!(
+      data &&
+      data.hostPeerId &&
+      data.hostHeartbeat &&
+      Date.now() - data.hostHeartbeat.toMillis() < HOST_TIMEOUT_MS
+    );
+  }
 
-Network.init();
-startThemeMusic();
+  async function join() {
+    if (peer) {
+      peer.destroy();
+      peer = null;
+    }
+
+    const snap = await roomRef.get();
+    const data = snap.exists ? snap.data() : null;
+
+    if (!isHostAlive(data)) {
+      await tryBecomeHost();
+    } else {
+      connectAsClient(data.hostPeerId);
+    }
+  }
+
+  // --- HOST ---
+
+  async function tryBecomeHost() {
+    try {
+      await db.runTransaction(async (tx) => {
+        const doc = await tx.get(roomRef);
+        const data = doc.exists ? doc.data() : null;
+
+        if (isHostAlive(data)) {
+          throw { retryAsClient: data.hostPeerId };
+        }
+
+        tx.set(roomRef, {
+          hostPeerId: myPeerId,
+          hostHeartbeat: firebase.firestore.FieldValue.serverTimestamp(),
+          status: "waiting",
+          playerCount: 0,
+        });
+      });
+    } catch (e) {
+      if (e && e.retryAsClient) {
+        connectAsClient(e.retryAsClient);
+        return;
+      }
+      callbacks.onError(e);
+      return;
+    }
+
+    startAsHost();
+  }
+
+  function startAsHost() {
+    isHost = true;
+    colorQueue = [...COLORS];
+    players.clear();
+
+    peer = new Peer(myPeerId);
+    peer.on("open", () => {
+      addPlayer(myPeerId, null);
+
+      startWorkerInterval(HOST_HEARTBEAT_INTERVAL, () => {
+        roomRef.update({
+          hostHeartbeat: firebase.firestore.FieldValue.serverTimestamp(),
+          playerCount: players.size,
+        });
+      });
+
+      startWorkerInterval(2000, checkStaleClients);
+    });
+
+    peer.on("connection", (conn) => {
+      conn.on("open", () => {
+        conn.on("data", (msg) => handleHostMessage(conn, msg));
+      });
+      conn.on("close", () => removePlayer(conn.peer));
+    });
+
+    peer.on("error", (err) => callbacks.onError(err));
+  }
+
+  function handleHostMessage(conn, msg) {
+    const p = players.get(msg.peerId || conn.peer);
+
+    switch (msg.type) {
+      case "JOIN":
+        addPlayer(conn.peer, conn);
+        break;
+      case "HEARTBEAT":
+        if (p) p.lastSeen = Date.now();
+        break;
+      case "LEAVE":
+        removePlayer(conn.peer);
+        break;
+      case "INPUT":
+        if (p) p.input = { dx: msg.dx, dy: msg.dy, sprint: msg.sprint };
+        break;
+      case "LIGHT_TOGGLE":
+        handleLightToggle(msg.peerId || conn.peer);
+        break;
+    }
+  }
+
+  function handleLightToggle(peerId) {
+    const p = players.get(peerId);
+    if (!p) return;
+    const room = ROOMS[p.room];
+    const sw = room && room.lightSwitch;
+    if (!sw || !rectsOverlap(playerBox(p.x, p.y), sw)) return;
+
+    const ls = roomLights[p.room] || (roomLights[p.room] = { on: true, blackoutEndsAt: 0 });
+    if (ls.on) {
+      ls.on = false;
+      ls.blackoutEndsAt = Date.now() + BLACKOUT_MS;
+    } else {
+      ls.on = true;
+      ls.blackoutEndsAt = 0;
+    }
+  }
+
+  function addPlayer(peerId, conn) {
+    const existing = players.get(peerId);
+    if (existing) {
+      existing.conn = conn;
+      existing.lastSeen = Date.now();
+      if (conn) conn.send({ type: "ASSIGN_COLOR", color: existing.color });
+      broadcastState();
+      return;
+    }
+    if (players.size >= MAX_PLAYERS) {
+      if (conn) conn.send({ type: "ROOM_FULL" });
+      return;
+    }
+    const idx = Math.floor(Math.random() * colorQueue.length);
+    const color = colorQueue.splice(idx, 1)[0];
+    players.set(peerId, { color, conn, lastSeen: Date.now() });
+    if (conn) conn.send({ type: "ASSIGN_COLOR", color });
+    else myColor = color;
+    broadcastState();
+  }
+
+  function removePlayer(peerId) {
+    const p = players.get(peerId);
+    if (!p) return;
+    colorQueue.push(p.color);
+    players.delete(peerId);
+    broadcastState();
+  }
+
+  function checkStaleClients() {
+    const now = Date.now();
+    players.forEach((p, id) => {
+      if (id !== myPeerId && now - p.lastSeen > CLIENT_TIMEOUT_MS) {
+        if (p.conn) p.conn.close();
+        removePlayer(id);
+      }
+    });
+  }
+
+  function broadcastState() {
+    const list = [...players.entries()].map(([id, p]) => ({
+      id,
+      color: p.color,
+      isHost: id === myPeerId,
+    }));
+    players.forEach((p) => {
+      if (p.conn) p.conn.send({ type: "STATE_SYNC", players: list });
+    });
+    callbacks.onStateSync(list);
+  }
+
+  function broadcastMessage(msg) {
+    players.forEach((p) => {
+      if (p.conn) p.conn.send(msg);
+    });
+  }
+
+  // Só o host chama: sorteia infectado, joga todo mundo na sala inicial e liga o tick.
+  // durationMin: 2, 4, 6 ou 0 (sem limite de tempo). Se omitido, reusa a última.
+  function startGame(durationMin) {
+    if (!isHost || players.size < 2) return;
+    if (typeof durationMin === "number") currentDurationMin = durationMin;
+
+    const ids = [...players.keys()];
+    const infectedId = ids[Math.floor(Math.random() * ids.length)];
+    const survivorIds = ids.filter((id) => id !== infectedId);
+
+    const survivorPositions = survivorIds.map(() => spawnFreePoint(INITIAL_ROOM));
+    const infectedPos = spawnFarFrom(INITIAL_ROOM, survivorPositions, PLAYER_W * 6);
+
+    survivorIds.forEach((id, i) => {
+      const p = players.get(id);
+      p.room = INITIAL_ROOM;
+      p.x = survivorPositions[i].x;
+      p.y = survivorPositions[i].y;
+      p.infected = false;
+      p.transforming = false;
+      p.alive = true;
+      p.facing = "right";
+      p.input = { dx: 0, dy: 0, sprint: false };
+      p.sprintUntil = 0;
+      p.sprintCooldownUntil = 0;
+    });
+    {
+      const p = players.get(infectedId);
+      p.room = INITIAL_ROOM;
+      p.x = infectedPos.x;
+      p.y = infectedPos.y;
+      p.infected = true;
+      p.transforming = false;
+      p.alive = true;
+      p.facing = "right";
+      p.input = { dx: 0, dy: 0, sprint: false };
+      p.sprintUntil = 0;
+      p.sprintCooldownUntil = 0;
+    }
+
+    roomLights = {};
+    Object.keys(ROOMS).forEach((rid) => {
+      if (ROOMS[rid].lightSwitch) roomLights[rid] = { on: true, blackoutEndsAt: 0 };
+    });
+
+    gameEndTime = currentDurationMin > 0 ? Date.now() + currentDurationMin * 60 * 1000 : Infinity;
+    roomRef.update({ status: "playing" });
+    const musicTrack = Math.floor(Math.random() * 6);
+    broadcastMessage({ type: "GAME_START", musicTrack });
+    callbacks.onGameStart(musicTrack);
+
+    if (tickInterval) tickInterval();
+    tickInterval = startWorkerInterval(TICK_MS, hostTick);
+  }
+
+  function hostTick() {
+    const now = Date.now();
+    const dt = TICK_MS / 1000;
+
+    Object.keys(roomLights).forEach((rid) => {
+      const ls = roomLights[rid];
+      if (!ls.on && now >= ls.blackoutEndsAt) {
+        ls.on = true;
+        ls.blackoutEndsAt = 0;
+      }
+    });
+
+    players.forEach((p) => {
+      if (p.transforming && now >= p.transformUntil) p.transforming = false;
+    });
+
+    players.forEach((p) => {
+      if (!p.alive || p.transforming) return;
+      const room = ROOMS[p.room];
+      if (!room) return;
+
+      const inLen = Math.hypot(p.input.dx, p.input.dy) || 1;
+      const ndx = p.input.dx / inLen, ndy = p.input.dy / inLen;
+      const moving = Math.hypot(p.input.dx, p.input.dy) > 0.05;
+
+      if (ndx > 0.05) p.facing = "right";
+      else if (ndx < -0.05) p.facing = "left";
+
+      // Mantém o estado de sprint ativo se a flag de sprint continuar verdadeira após o cooldown
+      if (p.input.sprint && now >= p.sprintCooldownUntil) {
+        p.sprintUntil = now + SPRINT_DURATION;
+        p.sprintCooldownUntil = p.sprintUntil + SPRINT_COOLDOWN;
+      }
+
+const isSprinting = now < p.sprintUntil;
+const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
+
+      if (moving) {
+        const targetX = Math.min(ROOM_W - PLAYER_W, Math.max(0, p.x + ndx * speed * dt));
+        const targetY = Math.min(ROOM_H - PLAYER_H, Math.max(0, p.y + ndy * speed * dt));
+        const prevX = p.x, prevY = p.y;
+
+        if (!collidesInRoom(p.room, playerBox(targetX, p.y))) p.x = targetX;
+        if (!collidesInRoom(p.room, playerBox(p.x, targetY))) p.y = targetY;
+
+        if (p.x === prevX && p.y === prevY && room.diagonals.length) {
+          const ramp = room.diagonals.find(
+            (d) =>
+              collidesWithDiagonal(d, playerBox(targetX, targetY)) ||
+              collidesWithDiagonal(d, playerBox(targetX, p.y)) ||
+              collidesWithDiagonal(d, playerBox(p.x, targetY))
+          );
+          if (ramp) {
+            const tlen = Math.hypot(ramp.x2 - ramp.x1, ramp.y2 - ramp.y1);
+            let tx = (ramp.x2 - ramp.x1) / tlen;
+            let ty = (ramp.y2 - ramp.y1) / tlen;
+            if (ndx * tx + ndy * ty < 0) {
+              tx = -tx;
+              ty = -ty;
+            }
+            const slideX = Math.min(ROOM_W - PLAYER_W, Math.max(0, p.x + tx * speed * dt));
+            const slideY = Math.min(ROOM_H - PLAYER_H, Math.max(0, p.y + ty * speed * dt));
+            if (!collidesInRoom(p.room, playerBox(slideX, p.y))) p.x = slideX;
+            if (!collidesInRoom(p.room, playerBox(p.x, slideY))) p.y = slideY;
+          }
+        }
+
+        const box = playerBox(p.x, p.y);
+        for (const ex of room.exits) {
+          if (ex.dir === "left" && ndx >= 0) continue;
+          if (ex.dir === "right" && ndx <= 0) continue;
+          if (ex.dir === "up" && ndy >= 0) continue;
+          if (ex.dir === "down" && ndy <= 0) continue;
+
+          let triggered;
+          if (ex.requireHalfOverlap) {
+            const overlapW = Math.min(box.x + box.w, ex.x + ex.w) - Math.max(box.x, ex.x);
+            const overlapH = Math.min(box.y + box.h, ex.y + ex.h) - Math.max(box.y, ex.y);
+            triggered = overlapW > 0 && overlapH > 0 && overlapW >= PLAYER_W / 2;
+          } else {
+            triggered = rectsOverlap(box, ex);
+          }
+
+          if (triggered) {
+            p.room = ex.toRoom;
+            p.x = ex.spawnX;
+            p.y = ex.spawnY;
+            break;
+          }
+        }
+      }
+    });
+
+    const infectedByRoom = {};
+    players.forEach((p) => {
+      if (p.infected && !p.transforming) (infectedByRoom[p.room] ||= []).push(p);
+    });
+    players.forEach((p) => {
+      if (p.infected) return;
+      const infs = infectedByRoom[p.room];
+      if (!infs) return;
+      for (const inf of infs) {
+        if (rectsOverlap(feetBox(p.x, p.y), feetBox(inf.x, inf.y))) {
+          p.infected = true;
+          p.transforming = true;
+          p.transformUntil = now + TRANSFORM_MS;
+          break;
+        }
+      }
+    });
+
+    const survivorsLeft = [...players.values()].filter((p) => !p.infected).length;
+    const timeLeft = gameEndTime === Infinity ? null : Math.max(0, Math.round((gameEndTime - now) / 1000));
+
+    broadcastGameState(timeLeft);
+
+    if (survivorsLeft === 0) return endGame("lastSurvivor");
+    if (timeLeft !== null && timeLeft <= 0) return endGame("time");
+  }
+
+  function broadcastGameState(timeLeft) {
+    const now = Date.now();
+    const list = [...players.entries()].map(([id, p]) => ({
+      id,
+      x: p.x,
+      y: p.y,
+      color: p.color,
+      infected: p.infected,
+      transforming: !!p.transforming,
+      room: p.room,
+      facing: p.facing,
+      sprintReady: now >= p.sprintCooldownUntil,
+      sprinting: now < p.sprintUntil,
+    }));
+    const lights = { ...roomLights };
+    broadcastMessage({ type: "GAME_STATE", players: list, timeLeft, roomLights: lights });
+    callbacks.onGameState({ players: list, timeLeft, roomLights: lights });
+  }
+
+  function endGame(reason) {
+    if (tickInterval) tickInterval();
+    tickInterval = null;
+    const survivors = [...players.entries()]
+      .filter(([, p]) => !p.infected)
+      .map(([id]) => id);
+    roomRef.update({ status: "waiting" });
+    broadcastMessage({ type: "GAME_OVER", reason, survivors });
+    callbacks.onGameOver({ reason, survivors });
+  }
+
+  // --- CLIENT ---
+
+  function connectAsClient(hostPeerId) {
+    isHost = false;
+    peer = new Peer(myPeerId);
+
+    peer.on("open", () => {
+      hostConn = peer.connect(hostPeerId);
+
+      hostConn.on("open", () => {
+        hostConn.send({ type: "JOIN", peerId: myPeerId });
+        startWorkerInterval(HEARTBEAT_INTERVAL, () => {
+          hostConn.send({ type: "HEARTBEAT", peerId: myPeerId });
+        });
+      });
+
+      hostConn.on("data", (msg) => {
+        switch (msg.type) {
+          case "ASSIGN_COLOR":
+            myColor = msg.color;
+            callbacks.onColorAssigned(msg.color);
+            break;
+          case "STATE_SYNC":
+            callbacks.onStateSync(msg.players);
+            break;
+          case "ROOM_FULL":
+            callbacks.onRoomFull();
+            break;
+          case "GAME_START":
+            callbacks.onGameStart(msg.musicTrack);
+            break;
+          case "GAME_STATE":
+            callbacks.onGameState({ players: msg.players, timeLeft: msg.timeLeft, roomLights: msg.roomLights });
+            break;
+          case "GAME_OVER":
+            callbacks.onGameOver({ reason: msg.reason, survivors: msg.survivors });
+            break;
+          case "PROMOTE":
+            becomeHostFromPromotion(msg.players);
+            break;
+        }
+      });
+
+      hostConn.on("close", () => {
+        if (isHost) return;
+        callbacks.onHostLost();
+      });
+    });
+
+    peer.on("error", (err) => callbacks.onError(err));
+  }
+
+  function becomeHostFromPromotion(list) {
+    isHost = true;
+    players.clear();
+
+    const usedColors = new Set(list.map((p) => p.color));
+    colorQueue = COLORS.filter((c) => !usedColors.has(c));
+
+    list.forEach((p) => {
+      players.set(p.id, { color: p.color, conn: null, lastSeen: Date.now() });
+    });
+    myColor = players.get(myPeerId)?.color ?? myColor;
+
+    peer.on("connection", (conn) => {
+      conn.on("open", () => {
+        conn.on("data", (msg) => handleHostMessage(conn, msg));
+      });
+      conn.on("close", () => removePlayer(conn.peer));
+    });
+
+    roomRef.update({
+      hostPeerId: myPeerId,
+      hostHeartbeat: firebase.firestore.FieldValue.serverTimestamp(),
+      status: "waiting",
+      playerCount: players.size,
+    });
+
+    startWorkerInterval(HOST_HEARTBEAT_INTERVAL, () => {
+      roomRef.update({
+        hostHeartbeat: firebase.firestore.FieldValue.serverTimestamp(),
+        playerCount: players.size,
+      });
+    });
+    startWorkerInterval(2000, checkStaleClients);
+
+    callbacks.onPromotedToHost();
+    broadcastState();
+  }
+
+  function sendInput(dx, dy, sprint) {
+    if (isHost) {
+      const p = players.get(myPeerId);
+      if (p) p.input = { dx, dy, sprint };
+    } else if (hostConn) {
+      hostConn.send({ type: "INPUT", peerId: myPeerId, dx, dy, sprint });
+    }
+  }
+
+  function toggleLight() {
+    if (isHost) {
+      handleLightToggle(myPeerId);
+    } else if (hostConn) {
+      hostConn.send({ type: "LIGHT_TOGGLE", peerId: myPeerId });
+    }
+  }
+
+  function restartGame() {
+    startGame();
+  }
+
+  function leaveRoom() {
+    if (!isHost) {
+      if (hostConn) hostConn.send({ type: "LEAVE", peerId: myPeerId });
+      if (peer) peer.destroy();
+      location.reload();
+      return;
+    }
+
+    const others = [...players.entries()].filter(([id]) => id !== myPeerId);
+
+    if (others.length === 0) {
+      roomRef.delete().catch(() => {});
+      if (peer) peer.destroy();
+      location.reload();
+      return;
+    }
+
+    const [successorId, successor] = others[0];
+    const payload = others.map(([id, p]) => ({ id, color: p.color }));
+    if (successor.conn) successor.conn.send({ type: "PROMOTE", players: payload });
+
+    setTimeout(() => {
+      if (peer) peer.destroy();
+      location.reload();
+    }, 300);
+  }
+
+  return {
+    init,
+    join,
+    startGame,
+    restartGame,
+    leaveRoom,
+    sendInput,
+    toggleLight,
+    isHostAlive,
+    on(name, fn) {
+      callbacks[name] = fn;
+    },
+    get isHost() {
+      return isHost;
+    },
+    get myPeerId() {
+      return myPeerId;
+    },
+    get myColor() {
+      return myColor;
+    },
+    MAX_PLAYERS,
+    PLAYER_W,
+    PLAYER_H,
+  };
+})();
