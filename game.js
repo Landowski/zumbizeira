@@ -540,10 +540,11 @@ function keyboardVector() {
   return { dx, dy };
 }
 
-// --- input: joystick virtual (híbrido touch + mouse, igual ao Golzinho Livre) ---
+// --- input: joystick virtual (isolado por toque) ---
 
 let joystickActive = false;
 let joystickVec = { dx: 0, dy: 0 };
+let joystickTouchId = null; // Guarda o identificador único do toque do joystick
 const JOY_RADIUS = 55;
 
 function updateJoystick(clientX, clientY) {
@@ -563,27 +564,59 @@ function updateJoystick(clientX, clientY) {
 
 function resetJoystick() {
   joystickActive = false;
+  joystickTouchId = null;
   joystickVec = { dx: 0, dy: 0 };
   joystickThumb.style.transform = "translate(0, 0)";
 }
 
 function joystickStart(e) {
-  joystickActive = true;
-  joystickMove(e);
+  if (e.touches) {
+    // Pega o primeiro toque que iniciou dentro do joystickZone
+    const touch = e.changedTouches[0];
+    joystickTouchId = touch.identifier;
+    joystickActive = true;
+    updateJoystick(touch.clientX, touch.clientY);
+  } else {
+    joystickActive = true;
+    updateJoystick(e.clientX, e.clientY);
+  }
 }
 
 function joystickMove(e) {
   if (!joystickActive) return;
-  if (e.touches) e.preventDefault();
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  updateJoystick(clientX, clientY);
+  if (e.touches) {
+    // Procura exatamente o toque que iniciou o joystick
+    for (let i = 0; i < e.touches.length; i++) {
+      if (e.touches[i].identifier === joystickTouchId) {
+        e.preventDefault();
+        updateJoystick(e.touches[i].clientX, e.touches[i].clientY);
+        break;
+      }
+    }
+  } else {
+    updateJoystick(e.clientX, e.clientY);
+  }
+}
+
+function joystickEnd(e) {
+  if (!joystickActive) return;
+  if (e.touches) {
+    // Só reseta se o toque finalizado for o do próprio joystick
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === joystickTouchId) {
+        resetJoystick();
+        break;
+      }
+    }
+  } else {
+    resetJoystick();
+  }
 }
 
 joystickZone.addEventListener("touchstart", joystickStart, { passive: false });
 window.addEventListener("touchmove", joystickMove, { passive: false });
-window.addEventListener("touchend", resetJoystick);
-window.addEventListener("touchcancel", resetJoystick);
+window.addEventListener("touchend", joystickEnd);
+window.addEventListener("touchcancel", joystickEnd);
 
 joystickZone.addEventListener("mousedown", joystickStart);
 window.addEventListener("mousemove", joystickMove);
@@ -615,12 +648,26 @@ function handleSprintPress() {
   sprintHeld = true;
 }
 
+// --- input: sprint (botão) ---
+
 sprintBtn.addEventListener("touchstart", (e) => {
   e.preventDefault();
+  e.stopPropagation();
   handleSprintPress();
 }, { passive: false });
-sprintBtn.addEventListener("touchend", () => (sprintHeld = false));
-sprintBtn.addEventListener("touchcancel", () => (sprintHeld = false));
+
+sprintBtn.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  sprintHeld = false;
+}, { passive: false });
+
+sprintBtn.addEventListener("touchcancel", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  sprintHeld = false;
+}, { passive: false });
+
 sprintBtn.addEventListener("mousedown", handleSprintPress);
 window.addEventListener("mouseup", () => (sprintHeld = false));
 window.addEventListener("keydown", (e) => {
