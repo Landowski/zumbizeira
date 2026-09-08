@@ -293,7 +293,7 @@ function drawToast() {
   ctx.save();
 
   // Fonte
-  ctx.font = "bold 18px system-ui, sans-serif";
+  ctx.font = "bold 22px system-ui, sans-serif";
 
   const textWidth = ctx.measureText(text).width;
 
