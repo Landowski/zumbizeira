@@ -1,7 +1,6 @@
 :root {
   --bg: #10130f;
-  --panel: #1a1f17;
-  --line: #2e3626;
+  --panel: #2f3929;
   --text: #e8ead4;
   --muted: #7c8570;
   --accent: #6fbf3f;
@@ -55,7 +54,6 @@ p, ul {
 #lobby {
   width: 90%;
   background: var(--panel);
-  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 20px;
   display: flex;
@@ -90,7 +88,6 @@ p, ul {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 10px;
 }
@@ -179,9 +176,10 @@ button {
 }
 
 button:disabled {
-  background: var(--line);
-  color: var(--muted);
-  cursor: not-allowed;
+  background: #4b5744 !important;
+  color: var(--muted) !important;
+  text-shadow: none !important;
+  box-shadow: 0px 5px #20271c, inset 0px 5px #ffffff16 !important;
 }
 
 #game {
@@ -213,7 +211,6 @@ canvas {
   gap: 12px;
   align-items: center;
   background: rgba(16, 19, 15, 0.75);
-  border: 1px solid var(--line);
   border-radius: 20px;
   padding: 6px 16px;
   z-index: 5;
