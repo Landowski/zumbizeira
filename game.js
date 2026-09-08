@@ -280,38 +280,52 @@ function showToast(text, durationMs = 3000) {
 
 function drawToast() {
   if (!activeToast) return;
+
   const now = performance.now();
+
   if (now > activeToast.expiresAt) {
     activeToast = null;
     return;
   }
 
   const text = activeToast.text;
+
   ctx.save();
-  ctx.font = "bold 18px sans-serif"; // ou a fonte retro/pixel do seu jogo
+
+  // Fonte
+  ctx.font = "bold 18px system-ui, sans-serif";
+
   const textWidth = ctx.measureText(text).width;
-  
+
   const paddingX = 20;
   const paddingY = 10;
+
   const boxW = textWidth + paddingX * 2;
   const boxH = 36;
+
+  // Posição horizontal centralizada
   const boxX = (ROOM_W - boxW) / 2;
-  const boxY = 40; // Exibe no topo central da tela
 
-  // Fundo do Toast
-  ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
-  ctx.fillRect(boxX, boxY, boxW, boxH);
+  // Posição vertical: começa embaixo e sobe
+  const marginBottom = 40;
+  const targetY = ROOM_H - boxH - marginBottom;
 
-  // Borda pixelada
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(boxX, boxY, boxW, boxH);
+  // Fundo arredondado
+  ctx.fillStyle = "rgba(16, 19, 15, 0.75)";
+  ctx.beginPath();
+  ctx.roundRect(boxX, targetY, boxW, boxH, 20);
+  ctx.fill();
 
   // Texto
   ctx.fillStyle = "#ffffff";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, ROOM_W / 2, boxY + boxH / 2);
+
+  ctx.fillText(
+    text,
+    ROOM_W / 2,
+    targetY + boxH / 2
+  );
 
   ctx.restore();
 }
