@@ -33,7 +33,7 @@ const ROOMS = {
     diagonals: [],
     exits: [
       { x: 658, y: 80, w: 85, h: 17, toRoom: "quarto", spawnX: 673, spawnY: 625 },
-      { x: 1372, y: 315, w: 4, h: 132, toRoom: "rua", spawnX: 1155, spawnY: 55 },
+      { x: 1372, y: 315, w: 4, h: 132, toRoom: "rua", spawnX: 83, spawnY: 85 },
       { x: 0, y: 315, w: 4, h: 132, toRoom: "cozinha", spawnX: 1291, spawnY: 454 },
     ],
     staticBack: [],
@@ -86,16 +86,14 @@ const ROOMS = {
     walls: [
       { x: 243, y: 176, w: 145, h: 4 },
       { x: 933, y: 282, w: 160, h: 8 },
-      { x: 0, y: 284, w: 77, h: 232 },
       { x: 1300, y: 284, w: 77, h: 232 },
     ],
     diagonals: [],
     exits: [
-      { x: 1138, y: 0, w: 89, h: 3, requireHalfOverlap: true, toRoom: "sala", spawnX: 1292, spawnY: 333 },
+      { x: 79, y: 0, w: 74, h: 3, requireHalfOverlap: true, toRoom: "sala", spawnX: 1240, spawnY: 333 },
     ],
     staticBack: [],
     ySort: [
-      { src: "img/rua-cone.png", x: 33, y: 250, w: 38, h: 34 },
       { src: "img/rua-cone.png", x: 1306, y: 250, w: 38, h: 34 },
       { src: "img/rua-arbusto-baixo.png", x: 357, y: 663, w: 128, h: 105 },
       { src: "img/rua-arbusto-baixo.png", x: 1017, y: 663, w: 128, h: 105 },
@@ -111,7 +109,7 @@ const ROOMS = {
     bg: "img/cozinha.png",
     walls: [
       { x: 0, y: 230, w: ROOM_W, h: 10 },
-      { x: 491, y: 486, w: 394, h: 77 },
+      { x: 491, y: 530, w: 394, h: 43 },
     ],
     diagonals: [],
     exits: [
@@ -120,11 +118,12 @@ const ROOMS = {
     ],
     staticBack: [],
     ySort: [
-      { src: "img/cozinha-mesa.png", x: 488, y: 420, w: 399, h: 68 },
+      { src: "img/cozinha-mesa.png", x: 489, y: 420, w: 398, h: 110 },
       { src: "img/cozinha-cadeira-baixo.png", x: 560, y: 570, w: 84, h: 96 },
       { src: "img/cozinha-cadeira-baixo.png", x: 732, y: 570, w: 84, h: 96 },
       { src: "img/cozinha-cadeira-lateral.png", x: 888, y: 431, w: 67, h: 90 },
       { src: "img/cozinha-cadeira-lateral.png", x: 421, y: 431, w: 67, h: 90, flip: true },
+      { src: "img/cozinha-armarinho.png", x: 48, y: 142, w: 121, h: 184 },
     ],
     lightSwitch: null,
   },
@@ -144,7 +143,7 @@ const ROOMS = {
     diagonals: [],
     exits: [
       { x: 849, y: 0, w: 94, h: 13, toRoom: "cozinha", spawnX: 80, spawnY: 454 },
-      { x: 151, y: 310, w: 34, h: 34, toRoom: "porao", spawnX: 80, spawnY: 7 },
+      { x: 151, y: 310, w: 34, h: 34, toRoom: "porao", spawnX: 110, spawnY: 7 },
     ],
     staticBack: [
       { src: "img/quintal-piscina-baixo.png", x: 524, y: 345, w: 327, h: 189 },
@@ -180,7 +179,7 @@ const ROOMS = {
       { x1: 32, y1: 542, x2: 373, y2: 384, thickness: 10, side: "above" },
     ],
     exits: [
-      { x: 0, y: 0, w: 15, h: 110, dir: "left", toRoom: "quintal", spawnX: 140, spawnY: 380 },
+      { x: 0, y: 0, w: 15, h: 110, dir: "left", toRoom: "quintal", spawnX: 140, spawnY: 170 },
     ],
     staticBack: [],
     staticFront: [

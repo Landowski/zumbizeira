@@ -1,3 +1,8 @@
+document.addEventListener("deviceready", async () => {
+  const { StatusBar } = Capacitor.Plugins;
+  await StatusBar.hide();
+});
+
 const statusEl = document.getElementById("status");
 const playerCountEl = document.getElementById("playerCount");
 const joinBtn = document.getElementById("joinBtn");
@@ -111,7 +116,7 @@ function createDustParticle(x, y) {
   dustParticles.push({
     x: x + (Math.random() * 10 - 5),
     y: y + (Math.random() * 4 - 2),
-    size: Math.random() > 0.5 ? 8 : 12, // Dobrado: era 4 ou 6, agora é 8 ou 12
+    size: Math.random() > 0.5 ? 10 : 14, // Dobrado: era 4 ou 6, agora é 8 ou 12
     life: 1.0,                        
     vx: (Math.random() - 0.5) * 0.5,
     vy: -Math.random() * 0.5 - 0.2     
@@ -161,32 +166,32 @@ function drawPlayerSprite(p) {
   const frameH = spec.h;
 
   const anim = animState.get(p.id);
+  const isMoving = !!(anim && anim.moving);
   const defaultFrame = Math.min(2, spec.frames - 1);
-  const frameIndex = anim && anim.moving ? Math.floor(performance.now() / 125) % spec.frames : defaultFrame;
+  const frameIndex = isMoving ? Math.floor(performance.now() / 125) % spec.frames : defaultFrame;
   const flip = p.facing === "left";
 
-  // ancora: base do sprite alinhada com a base da hitbox, centralizado horizontalmente nela
-  const drawX = p.x + (Network.PLAYER_W - frameW) / 2;
-  const drawY = p.y + Network.PLAYER_H - frameH;
+  // --- EFEITO PULINHO (BOUNCE AMONG US) ---
+  let bounceY = 0;
+  if (isMoving && (frameIndex === 1 || frameIndex === 3)) {
+    bounceY = -5;
+  }
 
-  // --- ADICIONE AQUI O DESENHO DA SOMBRA NO CHÃO ---
-  // Desenha ANTES do sprite para ficar por baixo
+  const drawX = p.x + (Network.PLAYER_W - frameW) / 2;
+  const drawY = (p.y + Network.PLAYER_H - frameH) + bounceY;
+
+  // --- DESENHO DA SOMBRA NO CHÃO ---
   ctx.save();
-  // Posiciona o centro da elipse na base horizontal e vertical do jogador
-  const centerX = drawX + frameW / 2;
+  const centerX = p.x + Network.PLAYER_W / 2;
   const centerY = p.y + Network.PLAYER_H; 
   
-  // Define a cor preta com opacidade (0.3 = 30%)
   ctx.fillStyle = "rgba(0, 0, 0, 0.3)"; 
-  
   ctx.beginPath();
-  // Desenha a elipse: elipse(x, y, raioX, raioY, rotação, anguloInicial, anguloFinal)
-  // Ajuste os valores 20 (largura) e 8 (altura) se necessário para o tamanho da sombra
   ctx.ellipse(centerX, centerY, 20, 8, 0, 0, 2 * Math.PI);
   ctx.fill();
   ctx.restore();
-  // -------------------------------------------------
 
+  // --- DESENHO DO SPRITE ---
   if (sheet.ready) {
     ctx.save();
     if (flip) {
@@ -202,16 +207,27 @@ function drawPlayerSprite(p) {
     ctx.fillRect(p.x, p.y, Network.PLAYER_W, Network.PLAYER_H);
   }
 
-  // indicador de "sou eu": triangulozinho branco acima da própria cabeça
-  if (p.id === Network.myPeerId) {
-    ctx.beginPath();
-    ctx.moveTo(p.x + Network.PLAYER_W / 2, p.y - 4);
-    ctx.lineTo(p.x + Network.PLAYER_W / 2 - 7, p.y - 16);
-    ctx.lineTo(p.x + Network.PLAYER_W / 2 + 7, p.y - 16);
-    ctx.closePath();
-    ctx.fillStyle = "#fff";
-    ctx.fill();
-  }
+  // --- EXIBIÇÃO DO NOME DA COR ACIMA DA CABEÇA (VISÍVEL PARA TODOS) ---
+  ctx.save();
+  ctx.font = '15px "Press Start 2P", sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+
+  const nameX = p.x + Network.PLAYER_W / 2;
+  const nameY = drawY - 6; // Posição Y logo acima da cabeça (acompanha o pulinho)
+  const nameText = p.color ? p.color : "";
+
+  // Borda/Contorno preto via strokeText (4px)
+  ctx.strokeStyle = "#000000";
+  ctx.lineWidth = 4;
+  ctx.lineJoin = "miter";
+  ctx.strokeText(nameText, nameX, nameY);
+
+  // Preenchimento do texto em branco
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(nameText, nameX, nameY);
+
+  ctx.restore();
 }
 
 function drawRoomScene(roomId, roomPlayers) {
@@ -293,7 +309,7 @@ function drawToast() {
   ctx.save();
 
   // Fonte
-  ctx.font = "bold 26px system-ui, sans-serif";
+  ctx.font = '17px "Press Start 2P", sans-serif';
 
   const textWidth = ctx.measureText(text).width;
 
@@ -433,7 +449,7 @@ Network.on("onGameState", ({ players, timeLeft, roomLights }) => {
           position: 'top'
         });
       } else {
-        showToast(`${message}`);
+        showToast(message);
       }
 
       if (p.room === myRoom) {
@@ -460,7 +476,6 @@ Network.on("onGameState", ({ players, timeLeft, roomLights }) => {
     roomPlayerIds.add(p.id);
     const anim = animState.get(p.id);
     const moving = !!(anim && anim.moving) && !p.transforming;
-    setLoopPlaying(`${p.id}:andando`, SFX.andando, moving && !p.sprinting);
     setLoopPlaying(`${p.id}:corrida`, SFX.corrida, moving && !!p.sprinting);
   });
   // quem não está mais no meu cômodo (saiu, ou eu que troquei de cômodo) para de tocar
@@ -487,14 +502,13 @@ Network.on("onGameOver", ({ reason, survivors }) => {
   stopAllLoopAudios();
   gameOverEl.classList.remove("hidden");
   const youSurvived = survivors.includes(Network.myPeerId);
-  gameOverText.textContent =
+  gameOverText.innerHTML =
     reason === "lastSurvivor"
       ? youSurvived
-        ? "Você sobreviveu!"
-        : "Os zumbis venceram."
+        ? "Você sobreviveu!" : "Os zumbis venceram."
       : youSurvived
-      ? `Tempo esgotado! Você e mais ${Math.max(0, survivors.length - 1)} sobreviveram!`
-      : "Tempo esgotado! Os zumbis perderam.";
+      ? `Tempo esgotado!<br>Você e mais ${Math.max(0, survivors.length - 1)} sobreviveram!`
+      : `Tempo esgotado!<br>Os zumbis perderam.`;
 
   restartBtn.classList.toggle("hidden", !Network.isHost);
   if (Network.isHost) {
@@ -502,7 +516,7 @@ Network.on("onGameOver", ({ reason, survivors }) => {
     restartBtn.disabled = !enough;
     restartBtn.textContent = enough
       ? "Reiniciar"
-      : `Reiniciar (precisa de ${MIN_PLAYERS}+)`;
+      : `Reiniciar (${MIN_PLAYERS})`;
   }
 });
 
@@ -554,6 +568,7 @@ function keyboardVector() {
   return { dx, dy };
 }
 
+// --- input: joystick virtual (híbrido touch + mouse, igual ao Golzinho Livre) ---
 // --- input: joystick virtual (isolado por toque) ---
 
 let joystickActive = false;

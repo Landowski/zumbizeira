@@ -21,11 +21,11 @@ const Network = (() => {
   const CLIENT_TIMEOUT_MS = 6000;
 
   const PLAYER_W = 54, PLAYER_H = 96;
-  const SURVIVOR_SPEED = 280; // px/s
-  const SPRINT_MULT = 2.8;
-  const SPRINT_DURATION = 1000;
+  const SURVIVOR_SPEED = 280;
+  const SPRINT_MULT = 2.5;
+  const SPRINT_DURATION = 700;
   const SPRINT_COOLDOWN = 3000;
-  const TICK_MS = 50; // 20Hz
+  const TICK_MS = 50;
   const DEFAULT_DURATION_MIN = 2;
   const BLACKOUT_MS = 8000;
   const TRANSFORM_MS = 3000;
@@ -380,6 +380,7 @@ function spawnFarFrom(roomId, others, minDistance) {
       p.y = survivorPositions[i].y;
       p.infected = false;
       p.transforming = false;
+      p.invulnerableUntil = 0;
       p.alive = true;
       p.facing = "right";
       p.input = { dx: 0, dy: 0, sprint: false };
@@ -393,6 +394,7 @@ function spawnFarFrom(roomId, others, minDistance) {
       p.y = infectedPos.y;
       p.infected = true;
       p.transforming = false;
+      p.invulnerableUntil = 0;
       p.alive = true;
       p.facing = "right";
       p.input = { dx: 0, dy: 0, sprint: false };
@@ -502,6 +504,7 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
             p.room = ex.toRoom;
             p.x = ex.spawnX;
             p.y = ex.spawnY;
+            p.invulnerableUntil = now + 1500;
             break;
           }
         }
@@ -513,7 +516,9 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
       if (p.infected && !p.transforming) (infectedByRoom[p.room] ||= []).push(p);
     });
     players.forEach((p) => {
-      if (p.infected) return;
+      // Ignora se o jogador já for infectado OU se ainda estiver invulnerável
+      if (p.infected || now < (p.invulnerableUntil || 0)) return; // <--- VALIDAÇÃO ADICIONADA
+
       const infs = infectedByRoom[p.room];
       if (!infs) return;
       for (const inf of infs) {

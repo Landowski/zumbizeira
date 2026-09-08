@@ -218,8 +218,8 @@ canvas {
 
 #joystickZone {
   position: absolute;
-  left: 24px;
-  bottom: 24px;
+  left: 110px;
+  bottom: 40px;
   width: 110px;
   height: 110px;
   border-radius: 50%;
@@ -244,14 +244,14 @@ canvas {
 
 #sprintBtn {
   position: absolute;
-  right: 44px;
-  bottom: 34px;
+  right: 120px;
+  bottom: 40px;
   width: 60px;
   height: 60px;
   border-radius: 16px;
-  background-color: rgba(255, 255, 255, 0.15);
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-bottom: 7px solid rgba(255, 255, 255, 0.35);
+  background-color: rgba(0, 0, 0, 0.15);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-bottom: 5px solid rgba(255, 255, 255, 0.3);
   color: transparent;
   z-index: 5;
   outline: none;

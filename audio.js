@@ -13,7 +13,6 @@ let SFX_VOLUME = 0.3;
 let MUSIC_VOLUME = 0.26;
 
 const SFX = {
-  andando: `${AUDIO_DIR}som-andando.mp3`,
   corrida: `${AUDIO_DIR}som-corrida.mp3`,
   infectado: `${AUDIO_DIR}som-infectado.mp3`,
   interruptor: `${AUDIO_DIR}som-interruptor.mp3`,
