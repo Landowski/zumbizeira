@@ -45,7 +45,7 @@ function stopThemeMusic() {
   if (themeAudio) {
     themeAudio.pause();
     themeAudio.currentTime = 0;
-    themeAudio.null;
+    themeAudio = null;
   }
 }
 
@@ -97,4 +97,42 @@ function stopMusic() {
     musicAudio.currentTime = 0;
     musicAudio = null;
   }
+}
+
+// --- GERENCIAMENTO DE PLANO DE FUNDO (MINIMIZADO / TELA BLOQUEADA) ---
+
+function pauseAllAudio() {
+  if (themeAudio && !themeAudio.paused) themeAudio.pause();
+  if (musicAudio && !musicAudio.paused) musicAudio.pause();
+  loopAudios.forEach((a) => {
+    if (!a.paused) a.pause();
+  });
+}
+
+function resumeAllAudio() {
+  // Retoma apenas a música que estava ativa antes do pause
+  if (themeAudio) themeAudio.play().catch(() => {});
+  if (musicAudio) musicAudio.play().catch(() => {});
+  // Os efeitos de passos/corrida (loopAudios) voltam automaticamente
+  // assim que o tick do jogo rodar na 'game_2.js' chamando setLoopPlaying.
+}
+
+// Evento para navegadores e WebViews (minimizou a aba ou bloqueou a tela)
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    pauseAllAudio();
+  } else {
+    resumeAllAudio();
+  }
+});
+
+// Evento nativo para o aplicativo (Capacitor)
+if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+  window.Capacitor.Plugins.App.addListener("appStateChange", ({ isActive }) => {
+    if (!isActive) {
+      pauseAllAudio();
+    } else {
+      resumeAllAudio();
+    }
+  });
 }
