@@ -271,7 +271,7 @@ function renderPlayerList(players) {
 // --- Sistema de Toast ---
 let activeToast = null; // { text, expiresAt }
 
-function showToast(text, durationMs = 3000) {
+function showToast(text, durationMs = 3600) {
   activeToast = {
     text,
     expiresAt: performance.now() + durationMs,
