@@ -423,7 +423,7 @@ Network.on("onGameState", ({ players, timeLeft, roomLights }) => {
     if (was === false && p.infected === true) {
       
       const colorName = p.color.charAt(0).toUpperCase() + p.color.slice(1);
-      const message = `⚠️ ${colorName} foi infectado!`;
+      const message = `${colorName} foi infectado!`;
 
       // Toast do Capacitor com fallback para console.log no PC
       if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Toast) {
