@@ -23,6 +23,8 @@ const gameOverEl = document.getElementById("gameOver");
 const gameOverText = document.getElementById("gameOverText");
 const restartBtn = document.getElementById("restartBtn");
 const leaveBtn = document.getElementById("leaveBtn");
+const nameInput = document.getElementById("name");
+const DEBUG_COLLIDERS = false;
 
 const MIN_PLAYERS = 2;
 
@@ -30,8 +32,18 @@ let joined = false;
 let latestState = [];
 let latestRoomLights = {};
 let selectedDurationMin = 2;
-const prevInfected = new Map(); // id -> bool, pra disparar o som só na transição
-const prevRoomLightOn = {}; // roomId -> bool, idem
+const prevInfected = new Map();
+const prevRoomLightOn = {};
+
+const savedName = localStorage.getItem("playerName") || "Jogador";
+nameInput.value = savedName;
+Network.setPlayerName(savedName);
+
+nameInput.addEventListener("input", (e) => {
+  const val = e.target.value.slice(0, 15);
+  localStorage.setItem("playerName", val);
+  Network.setPlayerName(val);
+});
 
 timeOptions.forEach((opt) => {
   opt.addEventListener("click", () => {
@@ -42,7 +54,36 @@ timeOptions.forEach((opt) => {
 });
 document.querySelector('.time-option[data-minutes="2"]').classList.add("selected");
 
-// --- carregamento de imagem com fallback (mesmo padrão dos protótipos de cômodo) ---
+const HIDING_OBJECTS_KEYS = new Set([
+  "img/sala-mesa-baixo.png_317_614",
+  "img/sala-mesa-baixo-2.png_592_563",
+  "img/sala-tv-rack.png_718_495",
+  "img/sala-mesa-esquerda.png_33_597",
+
+  "img/quarto-cadeira.png_128_357",
+  "img/quarto-mesa-esquerda.png_31_333",
+  "img/quarto-mesa-direita.png_1127_519",
+
+  "img/rua-arbusto-baixo.png_357_663",
+  "img/rua-arbusto-baixo.png_1017_663",
+  "img/rua-arbusto-esquerdo.png_187_663",
+  "img/rua-arvore.png_518_0",
+
+  "img/cozinha-mesa.png_489_420",
+  "img/cozinha-armarinho.png_48_142",
+
+  "img/quintal-piscina-topo.png_526_234",
+  "img/quintal-arbusto-esquerda.png_50_74",
+  "img/quintal-arbusto-arvore.png_981_95",
+  "img/quintal-arvore.png_1100_0",
+  "img/quintal-arbusto-baixo.png_39_457",
+
+  "img/porao-tralhas.png_18_334",
+  "img/porao-caixas-baixo.png_181_596",
+  "img/porao-caixas-esquerda.png_28_538",
+  "img/porao-caixas-direita.png_1231_430"
+]);
+
 const imageCache = new Map();
 function loadImageWithFallback(src, w, h, label) {
   if (imageCache.has(src)) return imageCache.get(src);
@@ -84,8 +125,6 @@ function drawObject(o) {
   drawWithFallback(sprite, o.x, o.y, o.flip);
 }
 
-// pré-carrega tudo (fundos, objetos, interruptores, sprites de jogador) —
-// evita "pop" de placeholder na primeira vez que se entra num cômodo
 function preloadAssets() {
   Object.values(ROOMS).forEach((room) => {
     loadImageWithFallback(room.bg, ROOM_W, ROOM_H, room.bg);
@@ -105,18 +144,15 @@ function preloadAssets() {
 }
 preloadAssets();
 
-// --- animação dos jogadores: só anima enquanto a posição está mudando de
-// verdade entre um GAME_STATE e outro; parado fica congelado no frame 0 ---
-const animState = new Map(); // id -> { lastX, lastY, moving }
+const animState = new Map();
 
-// --- Sistema de partículas de fumaça pixelada ---
 const dustParticles = [];
 
 function createDustParticle(x, y) {
   dustParticles.push({
     x: x + (Math.random() * 10 - 5),
     y: y + (Math.random() * 4 - 2),
-    size: Math.random() > 0.5 ? 10 : 14, // Dobrado: era 4 ou 6, agora é 8 ou 12
+    size: Math.random() > 0.5 ? 10 : 14,
     life: 1.0,                        
     vx: (Math.random() - 0.5) * 0.5,
     vy: -Math.random() * 0.5 - 0.2     
@@ -126,7 +162,7 @@ function createDustParticle(x, y) {
 function updateAndDrawDust() {
   for (let i = dustParticles.length - 1; i >= 0; i--) {
     const p = dustParticles[i];
-    p.life -= 0.04; // velocidade de desaparecimento
+    p.life -= 0.04;
     p.x += p.vx;
     p.y += p.vy;
 
@@ -136,9 +172,7 @@ function updateAndDrawDust() {
     }
 
     ctx.save();
-    // Usa opacidade com cor cinza/branca pixelada
     ctx.fillStyle = `rgba(200, 200, 200, ${p.life * 0.5})`;
-    // Math.floor para manter a posição travada na grade de pixels
     ctx.fillRect(Math.floor(p.x), Math.floor(p.y), p.size, p.size);
     ctx.restore();
   }
@@ -157,7 +191,7 @@ function updateAnimState(players) {
   });
 }
 
-function drawPlayerSprite(p) {
+function drawPlayerSprite(p, isHidden = false) {
   const spriteSet = PLAYER_SPRITES[p.color];
   if (!spriteSet) return;
   const spec = p.transforming ? spriteSet.infectado : p.infected ? spriteSet.zumbi : spriteSet.base;
@@ -171,7 +205,6 @@ function drawPlayerSprite(p) {
   const frameIndex = isMoving ? Math.floor(performance.now() / 125) % spec.frames : defaultFrame;
   const flip = p.facing === "left";
 
-  // --- EFEITO PULINHO (BOUNCE AMONG US) ---
   let bounceY = 0;
   if (isMoving && (frameIndex === 1 || frameIndex === 3)) {
     bounceY = -5;
@@ -180,18 +213,18 @@ function drawPlayerSprite(p) {
   const drawX = p.x + (Network.PLAYER_W - frameW) / 2;
   const drawY = (p.y + Network.PLAYER_H - frameH) + bounceY;
 
-  // --- DESENHO DA SOMBRA NO CHÃO ---
-  ctx.save();
-  const centerX = p.x + Network.PLAYER_W / 2;
-  const centerY = p.y + Network.PLAYER_H; 
-  
-  ctx.fillStyle = "rgba(0, 0, 0, 0.3)"; 
-  ctx.beginPath();
-  ctx.ellipse(centerX, centerY, 20, 8, 0, 0, 2 * Math.PI);
-  ctx.fill();
-  ctx.restore();
+  if (!isHidden) {
+    ctx.save();
+    const centerX = p.x + Network.PLAYER_W / 2;
+    const centerY = p.y + Network.PLAYER_H; 
+    
+    ctx.fillStyle = "rgba(0, 0, 0, 0.3)"; 
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, 20, 8, 0, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.restore();
+  }
 
-  // --- DESENHO DO SPRITE ---
   if (sheet.ready) {
     ctx.save();
     if (flip) {
@@ -207,27 +240,26 @@ function drawPlayerSprite(p) {
     ctx.fillRect(p.x, p.y, Network.PLAYER_W, Network.PLAYER_H);
   }
 
-  // --- EXIBIÇÃO DO NOME DA COR ACIMA DA CABEÇA (VISÍVEL PARA TODOS) ---
-  ctx.save();
-  ctx.font = '15px "Press Start 2P", sans-serif';
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
+  if (!isHidden) {
+    ctx.save();
+    ctx.font = '17px "Press Start 2P", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
 
-  const nameX = p.x + Network.PLAYER_W / 2;
-  const nameY = drawY - 6; // Posição Y logo acima da cabeça (acompanha o pulinho)
-  const nameText = p.color ? p.color : "";
+    const nameX = p.x + Network.PLAYER_W / 2;
+    const nameY = drawY - 6;
+    const nameText = p.name ? p.name : "Jogador";
 
-  // Borda/Contorno preto via strokeText (4px)
-  ctx.strokeStyle = "#000000";
-  ctx.lineWidth = 4;
-  ctx.lineJoin = "miter";
-  ctx.strokeText(nameText, nameX, nameY);
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 4;
+    ctx.lineJoin = "miter";
+    ctx.strokeText(nameText, nameX, nameY);
 
-  // Preenchimento do texto em branco
-  ctx.fillStyle = "#ffffff";
-  ctx.fillText(nameText, nameX, nameY);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(nameText, nameX, nameY);
 
-  ctx.restore();
+    ctx.restore();
+  }
 }
 
 function drawRoomScene(roomId, roomPlayers) {
@@ -246,37 +278,89 @@ function drawRoomScene(roomId, roomPlayers) {
     );
   }
 
-  // --- EMISSÃO DE FUMAÇA DURANTE O SPRINT ---
   roomPlayers.forEach((p) => {
     const anim = animState.get(p.id);
-    // Emite fumaça apenas se estiver se movendo E com sprint ativo E não transformando
     if (p.sprinting && anim && anim.moving && !p.transforming) {
-      // Posição dos pés do jogador
       const feetX = p.x + Network.PLAYER_W / 2;
       const feetY = p.y + Network.PLAYER_H;
-      
-      // Emite partículas espaçadas
       if (Math.random() < 0.6) {
         createDustParticle(feetX, feetY);
       }
     }
   });
 
+  const ySortObjects = (room.ySort || []).map((o) => ({
+    ...o,
+    bottom: o.y + o.h - o.h * (o.ySortOffsetFromBottom || 0),
+    draw: () => drawObject(o)
+  }));
+
+  const hidingCandidates = [
+    ...(room.ySort || []),
+    ...(room.staticFront || [])
+  ].filter((o) => HIDING_OBJECTS_KEYS.has(`${o.src}_${o.x}_${o.y}`));
+
   const entities = [
-    ...roomPlayers.map((p) => ({ bottom: p.y + Network.PLAYER_H, draw: () => drawPlayerSprite(p) })),
-    ...(room.ySort || []).map((o) => ({
-      bottom: o.y + o.h - o.h * (o.ySortOffsetFromBottom || 0),
-      draw: () => drawObject(o),
-    })),
+    ...roomPlayers.map((p) => {
+      const playerBottom = p.y + Network.PLAYER_H;
+
+      const isHidden = hidingCandidates.some((o) => {
+        const realBottom = o.y + o.h;
+        const oBottom = o.ySortOffsetFromBottom ? (o.y + o.h - o.h * o.ySortOffsetFromBottom) : realBottom;
+
+        const overlapX = p.x < o.x + o.w && p.x + Network.PLAYER_W > o.x;
+        const overlapY = p.y < o.y + o.h && playerBottom > o.y;
+        const effectiveBottom = realBottom >= 750 ? realBottom + 50 : oBottom;
+
+        return overlapX && overlapY && playerBottom <= effectiveBottom;
+      });
+
+      return {
+        bottom: playerBottom,
+        draw: () => drawPlayerSprite(p, isHidden)
+      };
+    }),
+    ...ySortObjects
   ];
+
   entities.sort((a, b) => a.bottom - b.bottom);
-  
-  // Desenha a fumaça antes das entidades para ficar no chão abaixo do Y-Sort
+
   updateAndDrawDust();
 
   entities.forEach((e) => e.draw());
 
   (room.staticFront || []).forEach(drawObject);
+
+  if (DEBUG_COLLIDERS) {
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 0, 0, 0.4)";
+    ctx.strokeStyle = "rgba(255, 0, 0, 0.8)";
+    ctx.lineWidth = 2;
+
+    (room.walls || []).forEach((w) => {
+      ctx.fillRect(w.x, w.y, w.w, w.h);
+      ctx.strokeRect(w.x, w.y, w.w, w.h);
+    });
+
+    (room.diagonals || []).forEach((d) => {
+      ctx.beginPath();
+      ctx.moveTo(d.x1, d.y1);
+      ctx.lineTo(d.x2, d.y2);
+      ctx.stroke();
+
+      const offsetY = d.side === "below" ? d.thickness : -d.thickness;
+      ctx.beginPath();
+      ctx.moveTo(d.x1, d.y1);
+      ctx.lineTo(d.x2, d.y2);
+      ctx.lineTo(d.x2, d.y2 + offsetY);
+      ctx.lineTo(d.x1, d.y1 + offsetY);
+      ctx.closePath();
+      ctx.fill();
+    });
+
+    ctx.restore();
+  }
+
   drawToast();
 }
 
@@ -284,8 +368,7 @@ function renderPlayerList(players) {
   playerCountEl.textContent = `${players.length} / ${Network.MAX_PLAYERS} na sala`;
 }
 
-// --- Sistema de Toast ---
-let activeToast = null; // { text, expiresAt }
+let activeToast = null;
 
 function showToast(text, durationMs = 3600) {
   activeToast = {
@@ -308,7 +391,6 @@ function drawToast() {
 
   ctx.save();
 
-  // Fonte
   ctx.font = '17px "Press Start 2P", sans-serif';
 
   const textWidth = ctx.measureText(text).width;
@@ -319,20 +401,16 @@ function drawToast() {
   const boxW = textWidth + paddingX * 2;
   const boxH = 36;
 
-  // Posição horizontal centralizada
   const boxX = (ROOM_W - boxW) / 2;
 
-  // Posição vertical: começa embaixo e sobe
   const marginBottom = 40;
   const targetY = ROOM_H - boxH - marginBottom;
 
-  // Fundo arredondado
   ctx.fillStyle = "rgba(16, 19, 15, 0.75)";
   ctx.beginPath();
   ctx.roundRect(boxX, targetY, boxW, boxH, 20);
   ctx.fill();
 
-  // Texto
   ctx.fillStyle = "#ffffff";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -345,8 +423,6 @@ function drawToast() {
 
   ctx.restore();
 }
-
-// --- callbacks de rede ---
 
 Network.on("onRoomUpdate", (data) => {
   if (joined) return;
@@ -433,15 +509,13 @@ Network.on("onGameState", ({ players, timeLeft, roomLights }) => {
   const me = players.find((p) => p.id === Network.myPeerId);
   const myRoom = me && me.room;
 
-  // som de infecção: só na transição pra infectado, só se aconteceu no meu cômodo
   players.forEach((p) => {
     const was = prevInfected.get(p.id);
     if (was === false && p.infected === true) {
       
-      const colorName = p.color.charAt(0).toUpperCase() + p.color.slice(1);
-      const message = `${colorName} foi infectado!`;
+      const playerName = p.name || "Jogador";
+      const message = `${playerName} foi infectado!`;
 
-      // Toast do Capacitor com fallback para console.log no PC
       if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Toast) {
         window.Capacitor.Plugins.Toast.show({
           text: message,
@@ -459,7 +533,6 @@ Network.on("onGameState", ({ players, timeLeft, roomLights }) => {
     prevInfected.set(p.id, p.infected);
   });
 
-  // som do interruptor: só na transição on<->off, só se for o meu cômodo
   Object.keys(latestRoomLights).forEach((rid) => {
     const isOn = latestRoomLights[rid].on;
     const was = prevRoomLightOn[rid];
@@ -469,7 +542,6 @@ Network.on("onGameState", ({ players, timeLeft, roomLights }) => {
     prevRoomLightOn[rid] = isOn;
   });
 
-  // passo/corrida: só quem está no meu cômodo agora, liga/desliga por jogador
   const roomPlayerIds = new Set();
   players.forEach((p) => {
     if (p.room !== myRoom) return;
@@ -478,7 +550,7 @@ Network.on("onGameState", ({ players, timeLeft, roomLights }) => {
     const moving = !!(anim && anim.moving) && !p.transforming;
     setLoopPlaying(`${p.id}:corrida`, SFX.corrida, moving && !!p.sprinting);
   });
-  // quem não está mais no meu cômodo (saiu, ou eu que troquei de cômodo) para de tocar
+
   loopAudios.forEach((_, key) => {
     const id = key.split(":")[0];
     if (!roomPlayerIds.has(id)) setLoopPlaying(key, "", false);
@@ -525,8 +597,6 @@ Network.on("onError", (err) => {
   statusEl.textContent = "Erro de conexão. Recarregue.";
 });
 
-// --- ações do usuário ---
-
 joinBtn.addEventListener("click", () => {
   joinBtn.disabled = true;
   statusEl.textContent = "Conectando...";
@@ -549,8 +619,6 @@ leaveBtn.addEventListener("click", () => {
   Network.leaveRoom();
 });
 
-// --- input: teclado ---
-
 const keys = new Set();
 window.addEventListener("keydown", (e) => keys.add(e.key.toLowerCase()));
 window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
@@ -568,12 +636,9 @@ function keyboardVector() {
   return { dx, dy };
 }
 
-// --- input: joystick virtual (híbrido touch + mouse, igual ao Golzinho Livre) ---
-// --- input: joystick virtual (isolado por toque) ---
-
 let joystickActive = false;
 let joystickVec = { dx: 0, dy: 0 };
-let joystickTouchId = null; // Guarda o identificador único do toque do joystick
+let joystickTouchId = null;
 const JOY_RADIUS = 55;
 
 function updateJoystick(clientX, clientY) {
@@ -600,7 +665,6 @@ function resetJoystick() {
 
 function joystickStart(e) {
   if (e.touches) {
-    // Pega o primeiro toque que iniciou dentro do joystickZone
     const touch = e.changedTouches[0];
     joystickTouchId = touch.identifier;
     joystickActive = true;
@@ -614,7 +678,6 @@ function joystickStart(e) {
 function joystickMove(e) {
   if (!joystickActive) return;
   if (e.touches) {
-    // Procura exatamente o toque que iniciou o joystick
     for (let i = 0; i < e.touches.length; i++) {
       if (e.touches[i].identifier === joystickTouchId) {
         e.preventDefault();
@@ -630,7 +693,6 @@ function joystickMove(e) {
 function joystickEnd(e) {
   if (!joystickActive) return;
   if (e.touches) {
-    // Só reseta se o toque finalizado for o do próprio joystick
     for (let i = 0; i < e.changedTouches.length; i++) {
       if (e.changedTouches[i].identifier === joystickTouchId) {
         resetJoystick();
@@ -650,8 +712,6 @@ window.addEventListener("touchcancel", joystickEnd);
 joystickZone.addEventListener("mousedown", joystickStart);
 window.addEventListener("mousemove", joystickMove);
 window.addEventListener("mouseup", resetJoystick);
-
-// --- input: sprint (botão) — perto do interruptor vira toggle de luz em vez de sprint ---
 
 function nearLightSwitch() {
   const me = latestState.find((p) => p.id === Network.myPeerId);
@@ -676,8 +736,6 @@ function handleSprintPress() {
   }
   sprintHeld = true;
 }
-
-// --- input: sprint (botão) ---
 
 sprintBtn.addEventListener("touchstart", (e) => {
   e.preventDefault();
@@ -706,9 +764,6 @@ window.addEventListener("keyup", (e) => {
   if (e.key === " ") sprintHeld = false;
 });
 
-// manda o input atual pro host no mesmo ritmo do tick (20Hz).
-// Worker interval em vez de setInterval: não sofre throttling de aba
-// em segundo plano, então o movimento não trava quando a janela perde foco.
 function startWorkerIntervalLocal(ms, onTick) {
   const code = `setInterval(() => postMessage(1), ${ms});`;
   const worker = new Worker(URL.createObjectURL(new Blob([code], { type: "application/javascript" })));
@@ -724,7 +779,6 @@ startWorkerIntervalLocal(50, () => {
   Network.sendInput(dx, dy, sprintHeld);
 });
 
-// --- render loop ---
 
 function drawFrame() {
   requestAnimationFrame(drawFrame);
@@ -732,7 +786,7 @@ function drawFrame() {
 
   const me = latestState.find((p) => p.id === Network.myPeerId);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!me) return; // ainda sem estado de jogo
+  if (!me) return;
 
   const roomId = me.room;
   const room = ROOMS[roomId];

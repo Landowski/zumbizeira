@@ -1,15 +1,3 @@
-/*
- * Camada de rede do Zumbi Party.
- *
- * Topologia: estrela. Todo mundo conecta só com o host; o host é
- * autoritativo (posição, colisão, infecção, luz, transição de cômodo).
- * Firestore serve SÓ pra descobrir quem é o host agora (escrita rara).
- * A partida em si trafega inteira via WebRTC/PeerJS.
- *
- * Depende de rooms-data.js (ROOMS, ROOM_W, ROOM_H, INITIAL_ROOM) já
- * carregado antes deste script.
- */
-
 const Network = (() => {
   const ROOM_ID = "main";
   const MAX_PLAYERS = 6;
@@ -30,11 +18,13 @@ const Network = (() => {
   const BLACKOUT_MS = 8000;
   const TRANSFORM_MS = 3000;
 
-  let currentDurationMin = DEFAULT_DURATION_MIN; // 0 = sem limite de tempo
+  let currentDurationMin = DEFAULT_DURATION_MIN;
+
+  let myName = "Jogador";
 
   let tickInterval = null;
   let gameEndTime = 0;
-  let roomLights = {}; // roomId -> { on, blackoutEndsAt } — só pra cômodos com interruptor
+  let roomLights = {};
 
   let db, roomRef;
   let peer = null;
@@ -42,10 +32,14 @@ const Network = (() => {
   let isHost = false;
 
   let colorQueue = [...COLORS];
-  const players = new Map(); // peerId -> { color, conn, lastSeen, room, x, y, infected, alive, facing, input, sprintUntil, sprintCooldownUntil }
+  const players = new Map();
 
   let hostConn = null;
   let myColor = null;
+
+  function setPlayerName(name) {
+    myName = (name && name.trim()) ? name.trim().slice(0, 15) : "Jogador";
+  }
 
   function startWorkerInterval(ms, onTick) {
     const code = `setInterval(() => postMessage(1), ${ms});`;
@@ -71,16 +65,10 @@ const Network = (() => {
     return "p-" + Math.random().toString(36).slice(2, 10);
   }
 
-  // --- geometria / colisão (mesma lógica dos protótipos de cômodo) ---
-
   function playerBox(x, y) {
     return { x, y, w: PLAYER_W, h: PLAYER_H };
   }
 
-  // Faixa fina na base do personagem, usada SÓ pra detectar infecção — não
-  // pra colisão de parede (essa continua com o corpo inteiro). Evita que a
-  // cabeça de quem está "mais atrás" (Y-sort) toque o pé de quem está na
-  // frente e conte como encostão.
   const FEET_H = 22;
   function feetBox(x, y) {
     return { x, y: y + PLAYER_H - FEET_H, w: PLAYER_W, h: FEET_H };
@@ -122,9 +110,7 @@ const Network = (() => {
     return room.walls.some((w) => rectsOverlap(box, w));
   }
 
-// Acha um ponto livre de colisão no cômodo.
 function spawnFreePoint(roomId) {
-  // Limite Y superior seguro para a Sala não nascer colada na parede/porta
   const minY = roomId === "sala" ? 160 : 0;
   const maxY = ROOM_H - PLAYER_H;
 
@@ -136,7 +122,6 @@ function spawnFreePoint(roomId) {
     if (!collidesInRoom(roomId, playerBox(c.x, c.y))) return c;
   }
   
-  // Varredura em grade respeitando o minY
   for (let y = minY; y < maxY; y += 20) {
     for (let x = 0; x < ROOM_W - PLAYER_W; x += 20) {
       if (!collidesInRoom(roomId, playerBox(x, y))) return { x, y };
@@ -145,7 +130,6 @@ function spawnFreePoint(roomId) {
   return { x: 100, y: 200 };
 }
 
-// Acha um ponto livre e longe de "others"
 function spawnFarFrom(roomId, others, minDistance) {
   const minY = roomId === "sala" ? 160 : 0;
   const maxY = ROOM_H - PLAYER_H;
@@ -203,8 +187,6 @@ function spawnFarFrom(roomId, others, minDistance) {
       connectAsClient(data.hostPeerId);
     }
   }
-
-  // --- HOST ---
 
   async function tryBecomeHost() {
     try {
@@ -269,7 +251,7 @@ function spawnFarFrom(roomId, others, minDistance) {
 
     switch (msg.type) {
       case "JOIN":
-        addPlayer(conn.peer, conn);
+        addPlayer(conn.peer, conn, msg.name);
         break;
       case "HEARTBEAT":
         if (p) p.lastSeen = Date.now();
@@ -278,7 +260,10 @@ function spawnFarFrom(roomId, others, minDistance) {
         removePlayer(conn.peer);
         break;
       case "INPUT":
-        if (p) p.input = { dx: msg.dx, dy: msg.dy, sprint: msg.sprint };
+        if (p) {
+          p.input = { dx: msg.dx, dy: msg.dy, sprint: msg.sprint };
+          if (msg.name) p.name = msg.name.slice(0, 15);
+        }
         break;
       case "LIGHT_TOGGLE":
         handleLightToggle(msg.peerId || conn.peer);
@@ -303,11 +288,13 @@ function spawnFarFrom(roomId, others, minDistance) {
     }
   }
 
-  function addPlayer(peerId, conn) {
+  function addPlayer(peerId, conn, name) {
+    const pName = (name && name.trim()) ? name.trim().slice(0, 15) : "Jogador";
     const existing = players.get(peerId);
     if (existing) {
       existing.conn = conn;
       existing.lastSeen = Date.now();
+      existing.name = pName;
       if (conn) conn.send({ type: "ASSIGN_COLOR", color: existing.color });
       broadcastState();
       return;
@@ -318,7 +305,7 @@ function spawnFarFrom(roomId, others, minDistance) {
     }
     const idx = Math.floor(Math.random() * colorQueue.length);
     const color = colorQueue.splice(idx, 1)[0];
-    players.set(peerId, { color, conn, lastSeen: Date.now() });
+    players.set(peerId, { color, name: pName, conn, lastSeen: Date.now() });
     if (conn) conn.send({ type: "ASSIGN_COLOR", color });
     else myColor = color;
     broadcastState();
@@ -346,6 +333,7 @@ function spawnFarFrom(roomId, others, minDistance) {
     const list = [...players.entries()].map(([id, p]) => ({
       id,
       color: p.color,
+      name: p.name || "Jogador",
       isHost: id === myPeerId,
     }));
     players.forEach((p) => {
@@ -360,8 +348,6 @@ function spawnFarFrom(roomId, others, minDistance) {
     });
   }
 
-  // Só o host chama: sorteia infectado, joga todo mundo na sala inicial e liga o tick.
-  // durationMin: 2, 4, 6 ou 0 (sem limite de tempo). Se omitido, reusa a última.
   function startGame(durationMin) {
     if (!isHost || players.size < 2) return;
     if (typeof durationMin === "number") currentDurationMin = durationMin;
@@ -445,7 +431,6 @@ function spawnFarFrom(roomId, others, minDistance) {
       if (ndx > 0.05) p.facing = "right";
       else if (ndx < -0.05) p.facing = "left";
 
-      // Mantém o estado de sprint ativo se a flag de sprint continuar verdadeira após o cooldown
       if (p.input.sprint && now >= p.sprintCooldownUntil) {
         p.sprintUntil = now + SPRINT_DURATION;
         p.sprintCooldownUntil = p.sprintUntil + SPRINT_COOLDOWN;
@@ -516,8 +501,7 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
       if (p.infected && !p.transforming) (infectedByRoom[p.room] ||= []).push(p);
     });
     players.forEach((p) => {
-      // Ignora se o jogador já for infectado OU se ainda estiver invulnerável
-      if (p.infected || now < (p.invulnerableUntil || 0)) return; // <--- VALIDAÇÃO ADICIONADA
+      if (p.infected || now < (p.invulnerableUntil || 0)) return;
 
       const infs = infectedByRoom[p.room];
       if (!infs) return;
@@ -547,6 +531,7 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
       x: p.x,
       y: p.y,
       color: p.color,
+      name: p.name || "Jogador",
       infected: p.infected,
       transforming: !!p.transforming,
       room: p.room,
@@ -570,8 +555,6 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
     callbacks.onGameOver({ reason, survivors });
   }
 
-  // --- CLIENT ---
-
   function connectAsClient(hostPeerId) {
     isHost = false;
     peer = new Peer(myPeerId);
@@ -580,7 +563,7 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
       hostConn = peer.connect(hostPeerId);
 
       hostConn.on("open", () => {
-        hostConn.send({ type: "JOIN", peerId: myPeerId });
+        hostConn.send({ type: "JOIN", peerId: myPeerId, name: myName });
         startWorkerInterval(HEARTBEAT_INTERVAL, () => {
           hostConn.send({ type: "HEARTBEAT", peerId: myPeerId });
         });
@@ -663,9 +646,12 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
   function sendInput(dx, dy, sprint) {
     if (isHost) {
       const p = players.get(myPeerId);
-      if (p) p.input = { dx, dy, sprint };
+      if (p) {
+        p.input = { dx, dy, sprint };
+        p.name = myName;
+      }
     } else if (hostConn) {
-      hostConn.send({ type: "INPUT", peerId: myPeerId, dx, dy, sprint });
+      hostConn.send({ type: "INPUT", peerId: myPeerId, dx, dy, sprint, name: myName });
     }
   }
 
@@ -711,6 +697,7 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
   return {
     init,
     join,
+    setPlayerName,
     startGame,
     restartGame,
     leaveRoom,
@@ -733,4 +720,5 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
     PLAYER_W,
     PLAYER_H,
   };
+
 })();

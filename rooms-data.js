@@ -1,17 +1,3 @@
-/*
- * Dados de todos os cômodos, portados dos protótipos (cozinha.html,
- * quintal.html, porao.html, rua.html, sala.html, quarto.html).
- *
- * Todo caminho de imagem já inclui o prefixo "img/".
- *
- * Cada saída (exits) tem toRoom + spawnX/spawnY: é um primeiro palpite de
- * onde o jogador reaparece do outro lado, mesma lógica do proto-rooms.html
- * (perto da porta correspondente, deslocado pra dentro do cômodo de
- * destino). Precisa ser conferido visualmente porta por porta — já erramos
- * esse pareamento uma vez antes (proto-rooms.html) e é fácil errar de novo
- * aqui, com 10 portas de uma vez.
- */
-
 const ROOM_W = 1376, ROOM_H = 768;
 
 const ROOMS = {
@@ -20,15 +6,15 @@ const ROOMS = {
     walls: [
       { x: 0, y: 0, w: 656, h: 153 },
       { x: 747, y: 0, w: 629, h: 104 },
-      { x: 1351, y: 0, w: 25, h: 315 },
-      { x: 1351, y: 447, w: 25, h: 321 },
-      { x: 0, y: 0, w: 25, h: 315 },
-      { x: 0, y: 447, w: 25, h: 321 },
+      { x: 1351, y: 0, w: 25, h: 300 },
+      { x: 1351, y: 462, w: 25, h: 306 },
+      { x: 0, y: 0, w: 25, h: 300 },
+      { x: 0, y: 462, w: 25, h: 306 },
       { x: 0, y: 727, w: ROOM_W, h: 41 },
-      { x: 839, y: 214, w: 214, h: 8 },
+      { x: 846, y: 214, w: 200, h: 8 },
       { x: 338, y: 323, w: 84, h: 8 },
       { x: 830, y: 384, w: 105, h: 8 },
-      { x: 477, y: 562, w: 79, h: 175 },
+      { x: 486, y: 562, w: 60, h: 165 },
     ],
     diagonals: [],
     exits: [
@@ -84,7 +70,7 @@ const ROOMS = {
   rua: {
     bg: "img/rua.png",
     walls: [
-      { x: 243, y: 176, w: 145, h: 4 },
+      { x: 263, y: 176, w: 105, h: 4 },
       { x: 933, y: 282, w: 160, h: 8 },
       { x: 1300, y: 284, w: 77, h: 232 },
     ],
@@ -108,7 +94,9 @@ const ROOMS = {
   cozinha: {
     bg: "img/cozinha.png",
     walls: [
-      { x: 0, y: 230, w: ROOM_W, h: 10 },
+      { x: 266, y: 220, w: 1110, h: 10 },
+      { x: 0, y: 171, w: 263, h: 10 },
+      { x: 263, y: 171, w: 10, h: 59 },
       { x: 491, y: 530, w: 394, h: 43 },
     ],
     diagonals: [],
@@ -143,7 +131,7 @@ const ROOMS = {
     diagonals: [],
     exits: [
       { x: 849, y: 0, w: 94, h: 13, toRoom: "cozinha", spawnX: 80, spawnY: 454 },
-      { x: 151, y: 310, w: 34, h: 34, toRoom: "porao", spawnX: 110, spawnY: 7 },
+      { x: 151, y: 310, w: 34, h: 34, toRoom: "porao", spawnX: 130, spawnY: 7 },
     ],
     staticBack: [
       { src: "img/quintal-piscina-baixo.png", x: 524, y: 345, w: 327, h: 189 },
@@ -170,19 +158,19 @@ const ROOMS = {
       { x: 599, y: 163, w: 280, h: 10 },
       { x: 876, y: 154, w: 468, h: 80 },
       { x: 0, y: 114, w: 193, h: 10 },
-      { x: 0, y: 542, w: 32, h: 225 },
-      { x: 373, y: 375, w: 188, h: 10 },
+      { x: 0, y: 345, w: 32, h: 385 }, // esquerda
+      { x: 0, y: 345, w: 500, h: 10 }, // embaixo da escada
     ],
     diagonals: [
-      { x1: 193, y1: 114, x2: 560, y2: 370, thickness: 10, side: "below" },
+      { x1: 193, y1: 114, x2: 500, y2: 340, thickness: 10, side: "below" },
       { x1: 323, y1: 0, x2: 599, y2: 173, thickness: 10, side: "above" },
-      { x1: 32, y1: 542, x2: 373, y2: 384, thickness: 10, side: "above" },
     ],
     exits: [
       { x: 0, y: 0, w: 15, h: 110, dir: "left", toRoom: "quintal", spawnX: 140, spawnY: 170 },
     ],
     staticBack: [],
     staticFront: [
+      { src: "img/porao-tralhas.png", x: 18, y: 334, w: 457, h: 257 },
       { src: "img/porao-caixas-baixo.png", x: 181, y: 596, w: 282, h: 130 },
       { src: "img/porao-caixas-esquerda.png", x: 28, y: 538, w: 114, h: 190 },
       { src: "img/porao-caixas-direita.png", x: 1231, y: 430, w: 117, h: 294 },
