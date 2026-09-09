@@ -1,13 +1,14 @@
 const AUDIO_DIR = "som/";
 
 let SFX_VOLUME = 0.3;
-let MUSIC_VOLUME = 0.4;
+let MUSIC_VOLUME = 0.3;
 
 const SFX = {
   corrida: `${AUDIO_DIR}som-corrida.mp3`,
   infectado: `${AUDIO_DIR}som-infectado.mp3`,
   interruptor: `${AUDIO_DIR}som-interruptor.mp3`,
   tempo: `${AUDIO_DIR}som-tempo.mp3`,
+  contagem: `${AUDIO_DIR}som-contagem.mp3`,
 };
 
 const MUSIC_TRACKS = [1, 2, 3, 4, 5, 6].map((n) => `${AUDIO_DIR}musica-${n}.mp3`);

@@ -24,21 +24,30 @@ const gameOverText = document.getElementById("gameOverText");
 const restartBtn = document.getElementById("restartBtn");
 const leaveBtn = document.getElementById("leaveBtn");
 const nameInput = document.getElementById("name");
+const characterOptions = document.querySelectorAll(".player-option");
+const savedName = localStorage.getItem("playerName") || "Jogador";
 const DEBUG_COLLIDERS = false;
-
 const MIN_PLAYERS = 2;
-
+const prevInfected = new Map();
+const prevRoomLightOn = {};
 let joined = false;
 let latestState = [];
 let latestRoomLights = {};
 let selectedDurationMin = 2;
-const prevInfected = new Map();
-const prevRoomLightOn = {};
+let countdownSoundPlayed = false;
 
-const savedName = localStorage.getItem("playerName") || "Jogador";
+characterOptions.forEach((opt) => {
+  opt.addEventListener("click", () => {
+    characterOptions.forEach((o) => o.classList.remove("selected"));
+    opt.classList.add("selected");
+    playSfx(SFX.tempo);
+    const selectedColor = opt.dataset.character;
+    Network.setPlayerColor(selectedColor);
+  });
+});
+
 nameInput.value = savedName;
 Network.setPlayerName(savedName);
-
 nameInput.addEventListener("input", (e) => {
   const val = e.target.value.slice(0, 15);
   localStorage.setItem("playerName", val);
@@ -53,6 +62,28 @@ timeOptions.forEach((opt) => {
   });
 });
 document.querySelector('.time-option[data-minutes="2"]').classList.add("selected");
+
+function updateCountdownUI(text) {
+  const overlay = document.getElementById("countdownOverlay");
+  const textEl = document.getElementById("countdownText");
+
+  if (!overlay || !textEl) return;
+
+  if (!text) {
+    overlay.classList.add("hidden");
+    textEl.textContent = "";
+    return;
+  }
+
+  overlay.classList.remove("hidden");
+
+  if (textEl.textContent !== text) {
+    textEl.textContent = text;
+    textEl.style.animation = "none";
+    textEl.offsetHeight;
+    textEl.style.animation = "";
+  }
+}
 
 const HIDING_OBJECTS_KEYS = new Set([
   "img/sala-mesa-baixo.png_317_614",
@@ -501,7 +532,15 @@ Network.on("onGameStart", (musicTrack) => {
   startMusic(musicTrack);
 });
 
-Network.on("onGameState", ({ players, timeLeft, roomLights }) => {
+Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText }) => {
+  if (countdownText && !countdownSoundPlayed) {
+    playSfx(SFX.contagem);
+    countdownSoundPlayed = true;
+  } else if (!countdownText) {
+    countdownSoundPlayed = false;
+  }
+  updateCountdownUI(countdownText);
+
   updateAnimState(players);
   latestState = players;
   latestRoomLights = roomLights || {};
@@ -570,6 +609,8 @@ Network.on("onGameState", ({ players, timeLeft, roomLights }) => {
 });
 
 Network.on("onGameOver", ({ reason, survivors }) => {
+  countdownSoundPlayed = false;
+  updateCountdownUI(null);
   stopMusic();
   stopAllLoopAudios();
   gameOverEl.classList.remove("hidden");

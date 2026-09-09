@@ -19,7 +19,33 @@
 
   <section id="lobby">
     <div class="left">
-      <img src="img/logo.png" style="width: 100%; height: auto;"/>
+      <img src="img/logo-nome.png" style="width: 100%; height: auto;"/>
+      <div class="jogadores" id="playerOptions">
+        <div class="player-option selected" data-character="azul">
+          <div class="player-tri"></div>
+          <img src="img/j-0.png"/>
+        </div>
+        <div class="player-option" data-character="laranja">
+          <div class="player-tri"></div>
+          <img src="img/j-1.png"/>
+        </div>
+        <div class="player-option" data-character="amarelo">
+          <div class="player-tri"></div>
+          <img src="img/j-2.png"/>
+        </div>
+        <div class="player-option" data-character="rosa">
+          <div class="player-tri"></div>
+          <img src="img/j-3.png"/>
+        </div>
+        <div class="player-option" data-character="verde">
+          <div class="player-tri"></div>
+          <img src="img/j-4.png"/>
+        </div>
+        <div class="player-option" data-character="roxo">
+          <div class="player-tri"></div>
+          <img src="img/j-5.png"/>
+        </div>
+      </div>
       <input type="text" id="name" maxlength="15" autocomplete="off">
     </div>
 
@@ -49,7 +75,7 @@
     </div>
     <button id="joinBtn" disabled>Entrar</button>
     <div class="menuBtns">
-      <button id="startBtn" class="hidden">INICIAR</button>
+      <button id="startBtn" class="hidden">Iniciar</button>
       <button id="lobbyLeaveBtn" class="hidden">Sair</button>
     </div>
   </div>
@@ -59,6 +85,9 @@
   <section id="game" class="hidden">
     <div id="hud" class="hidden">
       <span id="timer">--</span>
+    </div>
+    <div id="countdownOverlay" class="countdown-overlay hidden">
+      <span id="countdownText" class="countdown-text"></span>
     </div>
     <canvas id="canvas" width="1376" height="768"></canvas>
  

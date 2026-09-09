@@ -20,7 +20,11 @@ const Network = (() => {
 
   let currentDurationMin = DEFAULT_DURATION_MIN;
 
+  let countdownStartTime = 0;
+  const COUNTDOWN_DURATION_MS = 4000;
+
   let myName = "Jogador";
+  let myRequestedColor = "azul";
 
   let tickInterval = null;
   let gameEndTime = 0;
@@ -36,6 +40,12 @@ const Network = (() => {
 
   let hostConn = null;
   let myColor = null;
+
+  function setPlayerColor(color) {
+    if (COLORS.includes(color)) {
+      myRequestedColor = color;
+    }
+  }
 
   function setPlayerName(name) {
     myName = (name && name.trim()) ? name.trim().slice(0, 15) : "Jogador";
@@ -224,7 +234,7 @@ function spawnFarFrom(roomId, others, minDistance) {
 
     peer = new Peer(myPeerId);
     peer.on("open", () => {
-      addPlayer(myPeerId, null);
+      addPlayer(myPeerId, null, myName, myRequestedColor);
 
       startWorkerInterval(HOST_HEARTBEAT_INTERVAL, () => {
         roomRef.update({
@@ -251,7 +261,7 @@ function spawnFarFrom(roomId, others, minDistance) {
 
     switch (msg.type) {
       case "JOIN":
-        addPlayer(conn.peer, conn, msg.name);
+        addPlayer(conn.peer, conn, msg.name, msg.requestedColor);
         break;
       case "HEARTBEAT":
         if (p) p.lastSeen = Date.now();
@@ -288,9 +298,10 @@ function spawnFarFrom(roomId, others, minDistance) {
     }
   }
 
-  function addPlayer(peerId, conn, name) {
+  function addPlayer(peerId, conn, name, requestedColor) {
     const pName = (name && name.trim()) ? name.trim().slice(0, 15) : "Jogador";
     const existing = players.get(peerId);
+    
     if (existing) {
       existing.conn = conn;
       existing.lastSeen = Date.now();
@@ -299,15 +310,19 @@ function spawnFarFrom(roomId, others, minDistance) {
       broadcastState();
       return;
     }
+
     if (players.size >= MAX_PLAYERS) {
       if (conn) conn.send({ type: "ROOM_FULL" });
       return;
     }
-    const idx = Math.floor(Math.random() * colorQueue.length);
-    const color = colorQueue.splice(idx, 1)[0];
+
+    const color = COLORS.includes(requestedColor) ? requestedColor : "azul";
+
     players.set(peerId, { color, name: pName, conn, lastSeen: Date.now() });
+
     if (conn) conn.send({ type: "ASSIGN_COLOR", color });
     else myColor = color;
+
     broadcastState();
   }
 
@@ -393,7 +408,11 @@ function spawnFarFrom(roomId, others, minDistance) {
       if (ROOMS[rid].lightSwitch) roomLights[rid] = { on: true, blackoutEndsAt: 0 };
     });
 
-    gameEndTime = currentDurationMin > 0 ? Date.now() + currentDurationMin * 60 * 1000 : Infinity;
+    const now = Date.now();
+    countdownStartTime = now;
+    const matchStartTime = now + COUNTDOWN_DURATION_MS;
+
+    gameEndTime = currentDurationMin > 0 ? matchStartTime + currentDurationMin * 60 * 1000 : Infinity;
     roomRef.update({ status: "playing" });
     const musicTrack = Math.floor(Math.random() * 6);
     broadcastMessage({ type: "GAME_START", musicTrack });
@@ -406,6 +425,23 @@ function spawnFarFrom(roomId, others, minDistance) {
   function hostTick() {
     const now = Date.now();
     const dt = TICK_MS / 1000;
+
+    // Lógica do texto da contagem
+    let countdownText = null;
+    const elapsedCountdown = now - countdownStartTime;
+    if (elapsedCountdown < 1000) {
+      countdownText = "3";
+    } else if (elapsedCountdown < 2000) {
+      countdownText = "2";
+    } else if (elapsedCountdown < 3000) {
+      countdownText = "1";
+    } else if (elapsedCountdown < 4000) {
+      countdownText = "CORRA!";
+    } else {
+      countdownText = null;
+    }
+
+    const isCountingDown = elapsedCountdown < 3000;
 
     Object.keys(roomLights).forEach((rid) => {
       const ls = roomLights[rid];
@@ -420,7 +456,7 @@ function spawnFarFrom(roomId, others, minDistance) {
     });
 
     players.forEach((p) => {
-      if (!p.alive || p.transforming) return;
+      if (!p.alive || p.transforming || isCountingDown) return;
       const room = ROOMS[p.room];
       if (!room) return;
 
@@ -436,8 +472,8 @@ function spawnFarFrom(roomId, others, minDistance) {
         p.sprintCooldownUntil = p.sprintUntil + SPRINT_COOLDOWN;
       }
 
-const isSprinting = now < p.sprintUntil;
-const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
+      const isSprinting = now < p.sprintUntil;
+      const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
 
       if (moving) {
         const targetX = Math.min(ROOM_W - PLAYER_W, Math.max(0, p.x + ndx * speed * dt));
@@ -518,13 +554,13 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
     const survivorsLeft = [...players.values()].filter((p) => !p.infected).length;
     const timeLeft = gameEndTime === Infinity ? null : Math.max(0, Math.round((gameEndTime - now) / 1000));
 
-    broadcastGameState(timeLeft);
+    broadcastGameState(timeLeft, countdownText);
 
     if (survivorsLeft === 0) return endGame("lastSurvivor");
     if (timeLeft !== null && timeLeft <= 0) return endGame("time");
   }
 
-  function broadcastGameState(timeLeft) {
+  function broadcastGameState(timeLeft, countdownText) {
     const now = Date.now();
     const list = [...players.entries()].map(([id, p]) => ({
       id,
@@ -540,8 +576,8 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
       sprinting: now < p.sprintUntil,
     }));
     const lights = { ...roomLights };
-    broadcastMessage({ type: "GAME_STATE", players: list, timeLeft, roomLights: lights });
-    callbacks.onGameState({ players: list, timeLeft, roomLights: lights });
+    broadcastMessage({ type: "GAME_STATE", players: list, timeLeft, roomLights: lights, countdownText });
+    callbacks.onGameState({ players: list, timeLeft, roomLights: lights, countdownText });
   }
 
   function endGame(reason) {
@@ -563,7 +599,12 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
       hostConn = peer.connect(hostPeerId);
 
       hostConn.on("open", () => {
-        hostConn.send({ type: "JOIN", peerId: myPeerId, name: myName });
+        hostConn.send({ 
+          type: "JOIN", 
+          peerId: myPeerId, 
+          name: myName, 
+          requestedColor: myRequestedColor 
+        });
         startWorkerInterval(HEARTBEAT_INTERVAL, () => {
           hostConn.send({ type: "HEARTBEAT", peerId: myPeerId });
         });
@@ -698,6 +739,7 @@ const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
     init,
     join,
     setPlayerName,
+    setPlayerColor,
     startGame,
     restartGame,
     leaveRoom,
