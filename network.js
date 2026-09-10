@@ -370,17 +370,14 @@ function spawnFarFrom(roomId, others, minDistance) {
     const ids = [...players.keys()];
     const allRooms = Object.keys(ROOMS);
 
-    // 1. Sorteia o zumbi
     const infectedId = ids[Math.floor(Math.random() * ids.length)];
     const survivorIds = ids.filter((id) => id !== infectedId);
 
-    // 2. Define cômodo aleatório para cada sobrevivente
     const survivorSpawns = survivorIds.map((id) => {
       const randomRoom = allRooms[Math.floor(Math.random() * allRooms.length)];
       return { id, room: randomRoom };
     });
 
-    // 3. Aplica o spawn dos sobreviventes (mantendo a propriedade character)
     survivorSpawns.forEach(({ id, room }) => {
       const pos = spawnFreePoint(room);
       const p = players.get(id);
@@ -396,10 +393,8 @@ function spawnFarFrom(roomId, others, minDistance) {
       p.input = { dx: 0, dy: 0, sprint: false };
       p.sprintUntil = 0;
       p.sprintCooldownUntil = 0;
-      // p.character é mantido intacto como foi definido na seleção do lobby
     });
 
-    // 4. Aplica o spawn do zumbi na 'sala'
     const survivorsInSala = survivorSpawns
       .filter((s) => s.room === "sala")
       .map((s) => players.get(s.id));
@@ -421,10 +416,9 @@ function spawnFarFrom(roomId, others, minDistance) {
       p.input = { dx: 0, dy: 0, sprint: false };
       p.sprintUntil = 0;
       p.sprintCooldownUntil = 0;
-      // p.character é mantido intacto
+
     }
 
-    // Reinicialização de luzes e partida
     roomLights = {};
     Object.keys(ROOMS).forEach((rid) => {
       if (ROOMS[rid].lightSwitch) roomLights[rid] = { on: true, blackoutEndsAt: 0 };
@@ -447,8 +441,6 @@ function spawnFarFrom(roomId, others, minDistance) {
   function hostTick() {
     const now = Date.now();
     const dt = TICK_MS / 1000;
-
-    // Lógica do texto da contagem
     let countdownText = null;
     const elapsedCountdown = now - countdownStartTime;
     if (elapsedCountdown < 1000) {

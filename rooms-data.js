@@ -155,30 +155,30 @@ const ROOMS = {
       { x: 0, y: 729, w: ROOM_W, h: 39 },
       { x: 599, y: 0, w: 748, h: 170 },
       { x: 0, y: 114, w: 193, h: 10 },
-      { x: 0, y: 345, w: 32, h: 385 }, // esquerda
-      { x: 0, y: 345, w: 500, h: 10 }, // embaixo da escada 6
-      { x: 0, y: 335, w: 490, h: 10 }, // embaixo da escada 7
-      { x: 0, y: 325, w: 475, h: 10 }, // embaixo da escada 8
-      { x: 0, y: 315, w: 460, h: 10 }, // embaixo da escada 9
-      { x: 0, y: 305, w: 445, h: 10 }, // embaixo da escada 10
-      { x: 0, y: 295, w: 430, h: 10 }, // embaixo da escada 11
-      { x: 0, y: 285, w: 420, h: 10 }, // embaixo da escada 12
-      { x: 0, y: 275, w: 408, h: 10 }, // embaixo da escada 13
-      { x: 0, y: 265, w: 390, h: 10 }, // embaixo da escada 14
-      { x: 0, y: 255, w: 377, h: 10 }, // embaixo da escada 15
-      { x: 0, y: 245, w: 363, h: 10 }, // embaixo da escada 16
-      { x: 0, y: 235, w: 350, h: 10 }, // embaixo da escada 17
-      { x: 0, y: 225, w: 338, h: 10 }, // embaixo da escada 18
-      { x: 0, y: 215, w: 330, h: 10 }, // embaixo da escada 19
-      { x: 0, y: 205, w: 310, h: 10 }, // embaixo da escada 20
-      { x: 0, y: 195, w: 295, h: 10 }, // embaixo da escada 21
-      { x: 0, y: 185, w: 283, h: 10 }, // embaixo da escada 22
-      { x: 0, y: 175, w: 270, h: 10 }, // embaixo da escada 23
-      { x: 0, y: 165, w: 255, h: 10 }, // embaixo da escada 24
-      { x: 0, y: 155, w: 243, h: 10 }, // embaixo da escada 25
-      { x: 0, y: 145, w: 230, h: 10 }, // embaixo da escada 26
-      { x: 0, y: 135, w: 215, h: 10 }, // embaixo da escada 27
-      { x: 0, y: 125, w: 206, h: 10 }, // embaixo da escada 28
+      { x: 0, y: 345, w: 32, h: 385 },
+      { x: 0, y: 345, w: 500, h: 10 },
+      { x: 0, y: 335, w: 490, h: 10 },
+      { x: 0, y: 325, w: 475, h: 10 },
+      { x: 0, y: 315, w: 460, h: 10 },
+      { x: 0, y: 305, w: 445, h: 10 },
+      { x: 0, y: 295, w: 430, h: 10 },
+      { x: 0, y: 285, w: 420, h: 10 },
+      { x: 0, y: 275, w: 408, h: 10 },
+      { x: 0, y: 265, w: 390, h: 10 },
+      { x: 0, y: 255, w: 377, h: 10 },
+      { x: 0, y: 245, w: 363, h: 10 },
+      { x: 0, y: 235, w: 350, h: 10 },
+      { x: 0, y: 225, w: 338, h: 10 },
+      { x: 0, y: 215, w: 330, h: 10 },
+      { x: 0, y: 205, w: 310, h: 10 },
+      { x: 0, y: 195, w: 295, h: 10 },
+      { x: 0, y: 185, w: 283, h: 10 },
+      { x: 0, y: 175, w: 270, h: 10 },
+      { x: 0, y: 165, w: 255, h: 10 },
+      { x: 0, y: 155, w: 243, h: 10 },
+      { x: 0, y: 145, w: 230, h: 10 },
+      { x: 0, y: 135, w: 215, h: 10 },
+      { x: 0, y: 125, w: 206, h: 10 },
     ],
     diagonals: [
       { x1: 193, y1: 114, x2: 500, y2: 340, thickness: 10, side: "below" },
