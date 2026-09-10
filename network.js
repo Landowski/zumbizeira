@@ -368,17 +368,26 @@ function spawnFarFrom(roomId, others, minDistance) {
     if (typeof durationMin === "number") currentDurationMin = durationMin;
 
     const ids = [...players.keys()];
+    const allRooms = Object.keys(ROOMS);
+
+    // 1. Sorteia o zumbi
     const infectedId = ids[Math.floor(Math.random() * ids.length)];
     const survivorIds = ids.filter((id) => id !== infectedId);
 
-    const survivorPositions = survivorIds.map(() => spawnFreePoint(INITIAL_ROOM));
-    const infectedPos = spawnFarFrom(INITIAL_ROOM, survivorPositions, PLAYER_W * 6);
+    // 2. Define cômodo aleatório para cada sobrevivente
+    const survivorSpawns = survivorIds.map((id) => {
+      const randomRoom = allRooms[Math.floor(Math.random() * allRooms.length)];
+      return { id, room: randomRoom };
+    });
 
-    survivorIds.forEach((id, i) => {
+    // 3. Aplica o spawn dos sobreviventes (mantendo a propriedade character)
+    survivorSpawns.forEach(({ id, room }) => {
+      const pos = spawnFreePoint(room);
       const p = players.get(id);
-      p.room = INITIAL_ROOM;
-      p.x = survivorPositions[i].x;
-      p.y = survivorPositions[i].y;
+      
+      p.room = room;
+      p.x = pos.x;
+      p.y = pos.y;
       p.infected = false;
       p.transforming = false;
       p.invulnerableUntil = 0;
@@ -387,12 +396,23 @@ function spawnFarFrom(roomId, others, minDistance) {
       p.input = { dx: 0, dy: 0, sprint: false };
       p.sprintUntil = 0;
       p.sprintCooldownUntil = 0;
+      // p.character é mantido intacto como foi definido na seleção do lobby
     });
+
+    // 4. Aplica o spawn do zumbi na 'sala'
+    const survivorsInSala = survivorSpawns
+      .filter((s) => s.room === "sala")
+      .map((s) => players.get(s.id));
+
+    const zumbiPos = survivorsInSala.length > 0
+      ? spawnFarFrom("sala", survivorsInSala, PLAYER_W * 6)
+      : spawnFreePoint("sala");
+
     {
       const p = players.get(infectedId);
-      p.room = INITIAL_ROOM;
-      p.x = infectedPos.x;
-      p.y = infectedPos.y;
+      p.room = "sala";
+      p.x = zumbiPos.x;
+      p.y = zumbiPos.y;
       p.infected = true;
       p.transforming = false;
       p.invulnerableUntil = 0;
@@ -401,8 +421,10 @@ function spawnFarFrom(roomId, others, minDistance) {
       p.input = { dx: 0, dy: 0, sprint: false };
       p.sprintUntil = 0;
       p.sprintCooldownUntil = 0;
+      // p.character é mantido intacto
     }
 
+    // Reinicialização de luzes e partida
     roomLights = {};
     Object.keys(ROOMS).forEach((rid) => {
       if (ROOMS[rid].lightSwitch) roomLights[rid] = { on: true, blackoutEndsAt: 0 };
@@ -626,7 +648,7 @@ function spawnFarFrom(roomId, others, minDistance) {
             callbacks.onGameStart(msg.musicTrack);
             break;
           case "GAME_STATE":
-            callbacks.onGameState({ players: msg.players, timeLeft: msg.timeLeft, roomLights: msg.roomLights });
+            callbacks.onGameState({ players: msg.players, timeLeft: msg.timeLeft, roomLights: msg.roomLights, countdownText: msg.countdownText });
             break;
           case "GAME_OVER":
             callbacks.onGameOver({ reason: msg.reason, survivors: msg.survivors });

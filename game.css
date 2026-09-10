@@ -177,7 +177,6 @@ input {
 
 .time-option {
   position: relative;
-  cursor: pointer;
   padding-top: 12px;
 }
 
@@ -198,13 +197,15 @@ input {
   display: block;
 }
 
-.time-option img {
+.time-option span {
+  color: #fff !important;
+  font-size: 1.2rem !important;
   display: block;
   opacity: 0.45;
   transition: opacity 0.15s;
 }
 
-.time-option.selected img {
+.time-option.selected span {
   opacity: 1;
 }
 

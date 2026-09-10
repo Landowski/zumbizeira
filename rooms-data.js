@@ -43,8 +43,8 @@ const ROOMS = {
     quarto: {
     bg: "img/quarto.png",
     walls: [
-      { x: 0, y: 0, w: 560, h: 143 },
-      { x: 560, y: 0, w: 814, h: 115 },
+      { x: 0, y: 0, w: 410, h: 180 },
+      { x: 410, y: 0, w: 960, h: 145 },
       { x: 0, y: 0, w: 26, h: ROOM_H },
       { x: 1350, y: 0, w: 26, h: ROOM_H },
       { x: 0, y: 730, w: 631, h: 38 },
@@ -60,8 +60,7 @@ const ROOMS = {
       { src: "img/quarto-mesa-esquerda.png", x: 31, y: 333, w: 98, h: 200 },
       { src: "img/quarto-mesa-direita.png", x: 1127, y: 519, w: 218, h: 207 },
       { src: "img/quarto-tv-baixo.png", x: 844, y: 713, w: 235, h: 16 },
-      { src: "img/quarto-armarios.png", x: 28, y: 138, w: 543, h: 135 },
-      { src: "img/quarto-cama.png", x: 1085, y: 183, w: 255, h: 228 },
+      { src: "img/quarto-estante.png", x: 424, y: 138, w: 147, h: 114 },
     ],
     lightSwitch: {
       x: 592, y: 135, w: 39, h: 40,
@@ -96,7 +95,7 @@ const ROOMS = {
   cozinha: {
     bg: "img/cozinha.png",
     walls: [
-      { x: 0, y: 0, w: ROOM_W, h: 190 },
+      { x: 0, y: 0, w: ROOM_W, h: 215 },
       { x: 491, y: 530, w: 394, h: 43 },
     ],
     diagonals: [],
@@ -111,7 +110,6 @@ const ROOMS = {
       { src: "img/cozinha-cadeira-baixo.png", x: 732, y: 570, w: 84, h: 96 },
       { src: "img/cozinha-cadeira-lateral.png", x: 888, y: 431, w: 67, h: 90 },
       { src: "img/cozinha-cadeira-lateral.png", x: 421, y: 431, w: 67, h: 90, flip: true },
-      { src: "img/cozinha-armarios.png", x: 261, y: 170, w: 1107, h: 161 },
       { src: "img/cozinha-armarinho.png", x: 48, y: 142, w: 121, h: 184 },
     ],
     lightSwitch: null,
@@ -130,7 +128,7 @@ const ROOMS = {
     diagonals: [],
     exits: [
       { x: 849, y: 0, w: 94, h: 13, toRoom: "cozinha", spawnX: 80, spawnY: 454 },
-      { x: 151, y: 310, w: 34, h: 34, toRoom: "porao", spawnX: 130, spawnY: 7 },
+      { x: 151, y: 310, w: 34, h: 34, toRoom: "porao", spawnX: 220, spawnY: 30 },
     ],
     staticBack: [
       { src: "img/quintal-piscina-baixo.png", x: 524, y: 345, w: 327, h: 189 },
@@ -158,29 +156,29 @@ const ROOMS = {
       { x: 599, y: 0, w: 748, h: 170 },
       { x: 0, y: 114, w: 193, h: 10 },
       { x: 0, y: 345, w: 32, h: 385 }, // esquerda
-      { x: 0, y: 345, w: 400, h: 10 }, // embaixo da escada
-      { x: 0, y: 335, w: 395, h: 10 }, // embaixo da escada
-      { x: 0, y: 325, w: 390, h: 10 }, // embaixo da escada
-      { x: 0, y: 315, w: 185, h: 10 }, // embaixo da escada
-      { x: 0, y: 305, w: 180, h: 10 }, // embaixo da escada
-      { x: 0, y: 295, w: 175, h: 10 }, // embaixo da escada
-      { x: 0, y: 285, w: 170, h: 10 }, // embaixo da escada
-      { x: 0, y: 275, w: 165, h: 10 }, // embaixo da escada
-      { x: 0, y: 265, w: 160, h: 10 }, // embaixo da escada
-      { x: 0, y: 255, w: 155, h: 10 }, // embaixo da escada
-      { x: 0, y: 245, w: 150, h: 10 }, // embaixo da escada
-      { x: 0, y: 235, w: 145, h: 10 }, // embaixo da escada
-      { x: 0, y: 225, w: 140, h: 10 }, // embaixo da escada
-      { x: 0, y: 215, w: 135, h: 10 }, // embaixo da escada
-      { x: 0, y: 205, w: 130, h: 10 }, // embaixo da escada
-      { x: 0, y: 195, w: 125, h: 10 }, // embaixo da escada
-      { x: 0, y: 185, w: 120, h: 10 }, // embaixo da escada
-      { x: 0, y: 175, w: 115, h: 10 }, // embaixo da escada
-      { x: 0, y: 165, w: 110, h: 10 }, // embaixo da escada
-      { x: 0, y: 155, w: 105, h: 10 }, // embaixo da escada
-      { x: 0, y: 145, w: 100, h: 10 }, // embaixo da escada
-      { x: 0, y: 135, w: 95, h: 10 }, // embaixo da escada
-
+      { x: 0, y: 345, w: 500, h: 10 }, // embaixo da escada 6
+      { x: 0, y: 335, w: 490, h: 10 }, // embaixo da escada 7
+      { x: 0, y: 325, w: 475, h: 10 }, // embaixo da escada 8
+      { x: 0, y: 315, w: 460, h: 10 }, // embaixo da escada 9
+      { x: 0, y: 305, w: 445, h: 10 }, // embaixo da escada 10
+      { x: 0, y: 295, w: 430, h: 10 }, // embaixo da escada 11
+      { x: 0, y: 285, w: 420, h: 10 }, // embaixo da escada 12
+      { x: 0, y: 275, w: 408, h: 10 }, // embaixo da escada 13
+      { x: 0, y: 265, w: 390, h: 10 }, // embaixo da escada 14
+      { x: 0, y: 255, w: 377, h: 10 }, // embaixo da escada 15
+      { x: 0, y: 245, w: 363, h: 10 }, // embaixo da escada 16
+      { x: 0, y: 235, w: 350, h: 10 }, // embaixo da escada 17
+      { x: 0, y: 225, w: 338, h: 10 }, // embaixo da escada 18
+      { x: 0, y: 215, w: 330, h: 10 }, // embaixo da escada 19
+      { x: 0, y: 205, w: 310, h: 10 }, // embaixo da escada 20
+      { x: 0, y: 195, w: 295, h: 10 }, // embaixo da escada 21
+      { x: 0, y: 185, w: 283, h: 10 }, // embaixo da escada 22
+      { x: 0, y: 175, w: 270, h: 10 }, // embaixo da escada 23
+      { x: 0, y: 165, w: 255, h: 10 }, // embaixo da escada 24
+      { x: 0, y: 155, w: 243, h: 10 }, // embaixo da escada 25
+      { x: 0, y: 145, w: 230, h: 10 }, // embaixo da escada 26
+      { x: 0, y: 135, w: 215, h: 10 }, // embaixo da escada 27
+      { x: 0, y: 125, w: 206, h: 10 }, // embaixo da escada 28
     ],
     diagonals: [
       { x1: 193, y1: 114, x2: 500, y2: 340, thickness: 10, side: "below" },
