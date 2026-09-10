@@ -26,8 +26,8 @@ const leaveBtn = document.getElementById("leaveBtn");
 const nameInput = document.getElementById("name");
 const characterOptions = document.querySelectorAll(".player-option");
 const savedName = localStorage.getItem("playerName") || "Jogador";
-const DEBUG_COLLIDERS = false;
-const MIN_PLAYERS = 2;
+const DEBUG_COLLIDERS = true; // ***
+const MIN_PLAYERS = 2; // ***
 const prevInfected = new Map();
 const prevRoomLightOn = {};
 let joined = false;
@@ -86,6 +86,7 @@ function updateCountdownUI(text) {
 }
 
 const HIDING_OBJECTS_KEYS = new Set([
+  "img/sala-armario.png_426_127",
   "img/sala-mesa-baixo.png_317_614",
   "img/sala-mesa-baixo-2.png_592_563",
   "img/sala-tv-rack.png_718_495",
@@ -94,6 +95,8 @@ const HIDING_OBJECTS_KEYS = new Set([
   "img/quarto-cadeira.png_128_357",
   "img/quarto-mesa-esquerda.png_31_333",
   "img/quarto-mesa-direita.png_1127_519",
+  "img/quarto-armarios.png_28_138",
+  "img/quarto-cama.png_1085_183",
 
   "img/rua-arbusto-baixo.png_357_663",
   "img/rua-arbusto-baixo.png_1017_663",
@@ -101,6 +104,7 @@ const HIDING_OBJECTS_KEYS = new Set([
   "img/rua-arvore.png_518_0",
 
   "img/cozinha-mesa.png_489_420",
+  "img/cozinha-armarios.png_261_170",
   "img/cozinha-armarinho.png_48_142",
 
   "img/quintal-piscina-topo.png_526_234",
@@ -112,6 +116,7 @@ const HIDING_OBJECTS_KEYS = new Set([
   "img/porao-tralhas.png_18_334",
   "img/porao-caixas-baixo.png_181_596",
   "img/porao-caixas-esquerda.png_28_538",
+  "img/porao-armario.png_871_165",
   "img/porao-caixas-direita.png_1231_430"
 ]);
 

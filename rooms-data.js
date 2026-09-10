@@ -4,17 +4,17 @@ const ROOMS = {
   sala: {
     bg: "img/sala.png",
     walls: [
-      { x: 0, y: 0, w: 656, h: 153 },
-      { x: 747, y: 0, w: 629, h: 104 },
+      { x: 0, y: 0, w: 630, h: 128 },
+      { x: 762, y: 0, w: 614, h: 104 },
       { x: 1351, y: 0, w: 25, h: 300 },
       { x: 1351, y: 462, w: 25, h: 306 },
       { x: 0, y: 0, w: 25, h: 300 },
       { x: 0, y: 462, w: 25, h: 306 },
       { x: 0, y: 727, w: ROOM_W, h: 41 },
-      { x: 853, y: 214, w: 185, h: 2 },
+      { x: 860, y: 214, w: 160, h: 2 },
       { x: 353, y: 323, w: 55, h: 2 },
       { x: 830, y: 384, w: 105, h: 2 },
-      { x: 486, y: 562, w: 60, h: 165 },
+      { x: 490, y: 605, w: 50, h: 120 },
     ],
     diagonals: [],
     exits: [
@@ -24,6 +24,7 @@ const ROOMS = {
     ],
     staticBack: [],
     ySort: [
+      { src: "img/sala-armario.png", x: 426, y: 127, w: 141, h: 129 },
       { src: "img/sala-sofa.png", x: 815, y: 158, w: 260, h: 55 },
       { src: "img/sala-poltrona.png", x: 318, y: 254, w: 123, h: 73 },
       { src: "img/sala-mesinha-centro.png", x: 810, y: 328, w: 146, h: 61 },
@@ -42,10 +43,10 @@ const ROOMS = {
     quarto: {
     bg: "img/quarto.png",
     walls: [
-      { x: 0, y: 153, w: 556, h: 25 },
-      { x: 570, y: 90, w: 806, h: 25 },
-      { x: 0, y: 153, w: 26, h: 765 },
-      { x: 1350, y: 90, w: 26, h: 678 },
+      { x: 0, y: 0, w: 560, h: 143 },
+      { x: 560, y: 0, w: 814, h: 115 },
+      { x: 0, y: 0, w: 26, h: ROOM_H },
+      { x: 1350, y: 0, w: 26, h: ROOM_H },
       { x: 0, y: 730, w: 631, h: 38 },
       { x: 744, y: 730, w: 632, h: 38 },
     ],
@@ -59,6 +60,8 @@ const ROOMS = {
       { src: "img/quarto-mesa-esquerda.png", x: 31, y: 333, w: 98, h: 200 },
       { src: "img/quarto-mesa-direita.png", x: 1127, y: 519, w: 218, h: 207 },
       { src: "img/quarto-tv-baixo.png", x: 844, y: 713, w: 235, h: 16 },
+      { src: "img/quarto-armarios.png", x: 28, y: 138, w: 543, h: 135 },
+      { src: "img/quarto-cama.png", x: 1085, y: 183, w: 255, h: 228 },
     ],
     lightSwitch: {
       x: 592, y: 135, w: 39, h: 40,
@@ -70,9 +73,9 @@ const ROOMS = {
   rua: {
     bg: "img/rua.png",
     walls: [
-      { x: 263, y: 176, w: 105, h: 4 },
-      { x: 933, y: 282, w: 160, h: 8 },
-      { x: 1300, y: 284, w: 77, h: 232 },
+      { x: 650, y: 640, w: 80, h: 2 },
+      { x: 950, y: 282, w: 120, h: 2 },
+      { x: 1305, y: 0, w: 70, h: ROOM_H },
     ],
     diagonals: [],
     exits: [
@@ -80,11 +83,10 @@ const ROOMS = {
     ],
     staticBack: [],
     ySort: [
-      { src: "img/rua-cone.png", x: 1306, y: 250, w: 38, h: 34 },
       { src: "img/rua-arbusto-baixo.png", x: 357, y: 663, w: 128, h: 105 },
       { src: "img/rua-arbusto-baixo.png", x: 1017, y: 663, w: 128, h: 105 },
       { src: "img/rua-arbusto-esquerdo.png", x: 187, y: 663, w: 129, h: 105 },
-      { src: "img/rua-banco.png", x: 241, y: 130, w: 149, h: 46 },
+      { src: "img/rua-banco.png", x: 614, y: 597, w: 149, h: 46 },
       { src: "img/rua-carro.png", x: 900, y: 230, w: 226, h: 59 },
       { src: "img/rua-arvore.png", x: 518, y: 0, w: 338, h: 233, ySortOffsetFromBottom: 0.10 },
     ],
@@ -94,9 +96,7 @@ const ROOMS = {
   cozinha: {
     bg: "img/cozinha.png",
     walls: [
-      { x: 266, y: 220, w: 1110, h: 10 },
-      { x: 0, y: 171, w: 263, h: 10 },
-      { x: 263, y: 171, w: 10, h: 59 },
+      { x: 0, y: 0, w: ROOM_W, h: 190 },
       { x: 491, y: 530, w: 394, h: 43 },
     ],
     diagonals: [],
@@ -111,6 +111,7 @@ const ROOMS = {
       { src: "img/cozinha-cadeira-baixo.png", x: 732, y: 570, w: 84, h: 96 },
       { src: "img/cozinha-cadeira-lateral.png", x: 888, y: 431, w: 67, h: 90 },
       { src: "img/cozinha-cadeira-lateral.png", x: 421, y: 431, w: 67, h: 90, flip: true },
+      { src: "img/cozinha-armarios.png", x: 261, y: 170, w: 1107, h: 161 },
       { src: "img/cozinha-armarinho.png", x: 48, y: 142, w: 121, h: 184 },
     ],
     lightSwitch: null,
@@ -120,13 +121,11 @@ const ROOMS = {
     bg: "img/quintal.png",
     walls: [
       { x: 0, y: 0, w: 35, h: ROOM_H },
-      { x: 0, y: 0, w: 849, h: 36 },
-      { x: 943, y: 0, w: 433, h: 36 },
-      { x: 433, y: 36, w: 416, h: 36 },
-      { x: 943, y: 36, w: 77, h: 36 },
+      { x: 0, y: 0, w: 830, h: 36 },
+      { x: 966, y: 0, w: 413, h: 36 },
       { x: 0, y: 738, w: ROOM_W, h: 30 },
       { x: 1342, y: 0, w: 34, h: ROOM_H },
-      { x: 547, y: 345, w: 280, h: 94 },
+      { x: 557, y: 350, w: 260, h: 75 },
     ],
     diagonals: [],
     exits: [
@@ -153,20 +152,42 @@ const ROOMS = {
   porao: {
     bg: "img/porao.png",
     walls: [
+      { x: 0, y: 0, w: 15, h: 110 }, // nova wall na esquerda
       { x: 1344, y: 0, w: 32, h: ROOM_H },
       { x: 0, y: 729, w: ROOM_W, h: 39 },
-      { x: 599, y: 163, w: 280, h: 10 },
-      { x: 876, y: 154, w: 468, h: 80 },
+      { x: 599, y: 0, w: 748, h: 170 },
       { x: 0, y: 114, w: 193, h: 10 },
       { x: 0, y: 345, w: 32, h: 385 }, // esquerda
-      { x: 0, y: 345, w: 500, h: 10 }, // embaixo da escada
+      { x: 0, y: 345, w: 400, h: 10 }, // embaixo da escada
+      { x: 0, y: 335, w: 395, h: 10 }, // embaixo da escada
+      { x: 0, y: 325, w: 390, h: 10 }, // embaixo da escada
+      { x: 0, y: 315, w: 185, h: 10 }, // embaixo da escada
+      { x: 0, y: 305, w: 180, h: 10 }, // embaixo da escada
+      { x: 0, y: 295, w: 175, h: 10 }, // embaixo da escada
+      { x: 0, y: 285, w: 170, h: 10 }, // embaixo da escada
+      { x: 0, y: 275, w: 165, h: 10 }, // embaixo da escada
+      { x: 0, y: 265, w: 160, h: 10 }, // embaixo da escada
+      { x: 0, y: 255, w: 155, h: 10 }, // embaixo da escada
+      { x: 0, y: 245, w: 150, h: 10 }, // embaixo da escada
+      { x: 0, y: 235, w: 145, h: 10 }, // embaixo da escada
+      { x: 0, y: 225, w: 140, h: 10 }, // embaixo da escada
+      { x: 0, y: 215, w: 135, h: 10 }, // embaixo da escada
+      { x: 0, y: 205, w: 130, h: 10 }, // embaixo da escada
+      { x: 0, y: 195, w: 125, h: 10 }, // embaixo da escada
+      { x: 0, y: 185, w: 120, h: 10 }, // embaixo da escada
+      { x: 0, y: 175, w: 115, h: 10 }, // embaixo da escada
+      { x: 0, y: 165, w: 110, h: 10 }, // embaixo da escada
+      { x: 0, y: 155, w: 105, h: 10 }, // embaixo da escada
+      { x: 0, y: 145, w: 100, h: 10 }, // embaixo da escada
+      { x: 0, y: 135, w: 95, h: 10 }, // embaixo da escada
+
     ],
     diagonals: [
       { x1: 193, y1: 114, x2: 500, y2: 340, thickness: 10, side: "below" },
-      { x1: 323, y1: 0, x2: 599, y2: 173, thickness: 10, side: "above" },
+      { x1: 323, y1: 0, x2: 599, y2: 173, thickness: 200, side: "above" },
     ],
     exits: [
-      { x: 0, y: 0, w: 15, h: 110, dir: "left", toRoom: "quintal", spawnX: 140, spawnY: 170 },
+      { x: 0, y: 0, w: 125, h: 1, toRoom: "quintal", spawnX: 140, spawnY: 170 },
     ],
     staticBack: [],
     staticFront: [
@@ -176,7 +197,9 @@ const ROOMS = {
       { src: "img/porao-caixas-direita.png", x: 1231, y: 430, w: 117, h: 294 },
       { src: "img/porao-escada.png", x: 169, y: 1, w: 429, h: 386 },
     ],
-    ySort: [],
+    ySort: [
+      { src: "img/porao-armario.png", x: 871, y: 165, w: 422, h: 163 },
+    ],
     lightSwitch: {
       x: 797, y: 159, w: 39, h: 40,
       onSprite: "img/interruptor-ligado.png",
