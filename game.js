@@ -590,7 +590,6 @@ Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText }) => 
     roomPlayerIds.add(p.id);
     const anim = animState.get(p.id);
     const moving = !!(anim && anim.moving) && !p.transforming;
-    setLoopPlaying(`${p.id}:corrida`, SFX.corrida, moving && !!p.sprinting);
   });
 
   loopAudios.forEach((_, key) => {
