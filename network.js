@@ -605,17 +605,20 @@ function spawnFarFrom(roomId, others, minDistance) {
     callbacks.onGameState({ players: list, timeLeft, roomLights: lights, countdownText });
   }
 
-  function endGame(reason) {
-    restoreAllLights();
-    if (tickInterval) tickInterval();
+function endGame(reason) {
+  restoreAllLights();
+  const survivors = [...players.entries()]
+    .filter(([, p]) => !p.infected)
+    .map(([id]) => id);
+  broadcastGameState(0, null);
+  if (tickInterval) {
+    tickInterval();
     tickInterval = null;
-    const survivors = [...players.entries()]
-      .filter(([, p]) => !p.infected)
-      .map(([id]) => id);
-    roomRef.update({ status: "waiting" });
-    broadcastMessage({ type: "GAME_OVER", reason, survivors });
-    callbacks.onGameOver({ reason, survivors });
   }
+  roomRef.update({ status: "waiting" });
+  broadcastMessage({ type: "GAME_OVER", reason, survivors });
+  callbacks.onGameOver({ reason, survivors });
+}
 
   function connectAsClient(hostPeerId) {
     isHost = false;
