@@ -611,6 +611,12 @@ Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText }) => 
 });
 
 Network.on("onGameOver", ({ reason, survivors }) => {
+  // Reset manual imediato das luzes no client
+  if (latestRoomLights) {
+    Object.keys(latestRoomLights).forEach((rid) => {
+      latestRoomLights[rid] = { on: true, blackoutEndsAt: 0 };
+    });
+  }
   countdownSoundPlayed = false;
   updateCountdownUI(null);
   stopMusic();
@@ -836,7 +842,8 @@ function drawFrame() {
   if (!room) return;
 
   const lights = latestRoomLights[roomId];
-  const lightsOff = room.lightSwitch && lights && lights.on === false;
+  const isGameOver = !gameOverEl.classList.contains("hidden");
+  const lightsOff = room.lightSwitch && lights && lights.on === false && !isGameOver;
 
   if (lightsOff) {
     ctx.fillStyle = "#000";
