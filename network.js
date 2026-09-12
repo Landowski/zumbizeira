@@ -161,6 +161,15 @@ function spawnFarFrom(roomId, others, minDistance) {
   return best || spawnFreePoint(roomId);
 }
 
+  function restoreAllLights() {
+    roomLights = {};
+    Object.keys(ROOMS).forEach((rid) => {
+      if (ROOMS[rid].lightSwitch) {
+        roomLights[rid] = { on: true, blackoutEndsAt: 0 };
+      }
+    });
+  }
+
   function init() {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
@@ -395,6 +404,8 @@ function spawnFarFrom(roomId, others, minDistance) {
       p.sprintCooldownUntil = 0;
     });
 
+    restoreAllLights();
+
     const survivorsInSala = survivorSpawns
       .filter((s) => s.room === "sala")
       .map((s) => players.get(s.id));
@@ -595,6 +606,7 @@ function spawnFarFrom(roomId, others, minDistance) {
   }
 
   function endGame(reason) {
+    restoreAllLights();
     if (tickInterval) tickInterval();
     tickInterval = null;
     const survivors = [...players.entries()]
