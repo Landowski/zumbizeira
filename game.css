@@ -309,26 +309,36 @@ canvas {
   transition: transform 0.05s ease;
 }
 
-#sprintBtn {
+#sprintBtn, #actionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
   position: absolute;
-  right: 120px;
-  bottom: 40px;
-  width: 60px;
-  height: 60px;
-  border-radius: 16px;
-  background-color: rgba(0, 0, 0, 0.15);
+  right: 15px;
+  width: 50px;
+  height: 50px;
+  border-radius: 360px;
+  background-color: rgba(255, 255, 255, 0.15);
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-bottom: 5px solid rgba(255, 255, 255, 0.3);
-  color: transparent;
+  color: #fff;
   z-index: 5;
   outline: none;
   touch-action: none;
   overflow: hidden;
 }
 
+#sprintBtn {
+    bottom: 50px !important;
+}
+
 #sprintBtn.on-cooldown {
   opacity: 0;
   pointer-events: none;
+}
+
+#actionBtn {
+  bottom: 120px !important;
 }
 
 #gameOver {

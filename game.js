@@ -18,6 +18,7 @@ const timeOptions = document.querySelectorAll(".time-option");
 const joystickZone = document.getElementById("joystickZone");
 const joystickThumb = document.getElementById("joystickThumb");
 const sprintBtn = document.getElementById("sprintBtn");
+const actionBtn = document.getElementById("actionBtn");
 const lobbyLeaveBtn = document.getElementById("lobbyLeaveBtn");
 const gameOverEl = document.getElementById("gameOver");
 const gameOverText = document.getElementById("gameOverText");
@@ -672,10 +673,6 @@ const keys = new Set();
 window.addEventListener("keydown", (e) => keys.add(e.key.toLowerCase()));
 window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 
-window.addEventListener("keydown", (e) => {
-  if (e.key.toLowerCase() === "l") Network.toggleLight();
-});
-
 function keyboardVector() {
   let dx = 0, dy = 0;
   if (keys.has("arrowleft") || keys.has("a")) dx -= 1;
@@ -683,6 +680,33 @@ function keyboardVector() {
   if (keys.has("arrowup") || keys.has("w")) dy -= 1;
   if (keys.has("arrowdown") || keys.has("s")) dy += 1;
   return { dx, dy };
+}
+
+function gamepadVector() {
+  const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+  const gp = Array.from(gamepads).find((g) => g !== null);
+
+  if (!gp) return { dx: 0, dy: 0, sprint: false, action: false };
+
+  let dx = gp.axes[0] || 0;
+  let dy = gp.axes[1] || 0;
+
+  const deadzone = 0.2;
+  if (Math.abs(dx) < deadzone) dx = 0;
+  if (Math.abs(dy) < deadzone) dy = 0;
+
+  if (gp.buttons[14] && gp.buttons[14].pressed) dx = -1;
+  if (gp.buttons[15] && gp.buttons[15].pressed) dx = 1;
+  if (gp.buttons[12] && gp.buttons[12].pressed) dy = -1;
+  if (gp.buttons[13] && gp.buttons[13].pressed) dy = 1;
+
+  // Sprint: Exclusivo Botão A / Cross (Index 0)
+  const sprint = !!(gp.buttons[0] && gp.buttons[0].pressed);
+
+  // Ação: Exclusivo Botão B / Circle (Index 1)
+  const action = !!(gp.buttons[1] && gp.buttons[1].pressed);
+
+  return { dx, dy, sprint, action };
 }
 
 let joystickActive = false;
@@ -777,40 +801,44 @@ function nearLightSwitch() {
 }
 
 let sprintHeld = false;
+let actionTriggered = false;
 
-function handleSprintPress() {
+function triggerAction() {
   if (nearLightSwitch()) {
     Network.toggleLight();
-    return;
   }
-  sprintHeld = true;
 }
 
+// Sprint - Touch e Mouse
 sprintBtn.addEventListener("touchstart", (e) => {
   e.preventDefault();
-  e.stopPropagation();
-  handleSprintPress();
+  sprintHeld = true;
 }, { passive: false });
-
-sprintBtn.addEventListener("touchend", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  sprintHeld = false;
-}, { passive: false });
-
-sprintBtn.addEventListener("touchcancel", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  sprintHeld = false;
-}, { passive: false });
-
-sprintBtn.addEventListener("mousedown", handleSprintPress);
+sprintBtn.addEventListener("touchend", () => (sprintHeld = false));
+sprintBtn.addEventListener("touchcancel", () => (sprintHeld = false));
+sprintBtn.addEventListener("mousedown", () => (sprintHeld = true));
 window.addEventListener("mouseup", () => (sprintHeld = false));
+
+// Sprint - Teclado (Espaço)
 window.addEventListener("keydown", (e) => {
   if (e.key === " ") sprintHeld = true;
 });
 window.addEventListener("keyup", (e) => {
   if (e.key === " ") sprintHeld = false;
+});
+
+// Ação - Touch e Mouse (actionBtn)
+actionBtn.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  triggerAction();
+}, { passive: false });
+actionBtn.addEventListener("click", triggerAction);
+
+// Ação - Teclado (Tecla 'E')
+window.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() === "e" && !e.repeat) {
+    triggerAction();
+  }
 });
 
 function startWorkerIntervalLocal(ms, onTick) {
@@ -820,14 +848,29 @@ function startWorkerIntervalLocal(ms, onTick) {
   return worker;
 }
 
+let wasPadActionPressed = false;
+
 startWorkerIntervalLocal(50, () => {
   if (gameEl.classList.contains("hidden")) return;
   const kb = keyboardVector();
-  const dx = joystickActive ? joystickVec.dx : kb.dx;
-  const dy = joystickActive ? joystickVec.dy : kb.dy;
-  Network.sendInput(dx, dy, sprintHeld);
+  const gp = gamepadVector();
+  if (gp.action && !wasPadActionPressed) {
+    triggerAction();
+  }
+  wasPadActionPressed = gp.action;
+  const isSprinting = sprintHeld || keys.has(" ") || gp.sprint;
+  let dx = kb.dx;
+  let dy = kb.dy;
+  if (Math.abs(gp.dx) > 0 || Math.abs(gp.dy) > 0) {
+    dx = gp.dx;
+    dy = gp.dy;
+  }
+  if (joystickActive) {
+    dx = joystickVec.dx;
+    dy = joystickVec.dy;
+  }
+  Network.sendInput(dx, dy, isSprinting);
 });
-
 
 function drawFrame() {
   requestAnimationFrame(drawFrame);

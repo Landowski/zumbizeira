@@ -19,7 +19,7 @@ const ROOMS = {
     diagonals: [],
     exits: [
       { x: 658, y: 80, w: 85, h: 17, toRoom: "quarto", spawnX: 673, spawnY: 625 },
-      { x: 1372, y: 315, w: 4, h: 132, toRoom: "rua", spawnX: 83, spawnY: 85 },
+      { x: 1372, y: 315, w: 4, h: 132, toRoom: "rua", spawnX: 362, spawnY: 83 },
       { x: 0, y: 315, w: 4, h: 132, toRoom: "cozinha", spawnX: 1291, spawnY: 454 },
     ],
     staticBack: [],
@@ -78,7 +78,7 @@ const ROOMS = {
     ],
     diagonals: [],
     exits: [
-      { x: 79, y: 0, w: 74, h: 3, requireHalfOverlap: true, toRoom: "sala", spawnX: 1240, spawnY: 333 },
+      { x: 362, y: 0, w: 74, h: 3, requireHalfOverlap: true, toRoom: "sala", spawnX: 1240, spawnY: 333 },
     ],
     staticBack: [],
     ySort: [
@@ -150,7 +150,7 @@ const ROOMS = {
   porao: {
     bg: "img/porao.png",
     walls: [
-      { x: 0, y: 0, w: 15, h: 110 }, // nova wall na esquerda
+      { x: 0, y: 0, w: 15, h: 110 },
       { x: 1344, y: 0, w: 32, h: ROOM_H },
       { x: 0, y: 729, w: ROOM_W, h: 39 },
       { x: 599, y: 0, w: 748, h: 170 },
