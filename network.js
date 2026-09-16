@@ -15,7 +15,7 @@ const Network = (() => {
   const SPRINT_COOLDOWN = 3000;
   const TICK_MS = 50;
   const DEFAULT_DURATION_MIN = 2;
-  const BLACKOUT_MS = 6000;
+  const BLACKOUT_MS = 4000;
   const TRANSFORM_MS = 2000;
 
   const ITEM_TYPES = {
@@ -53,29 +53,40 @@ const Network = (() => {
 
   function spawnMapItems() {
     roomItems = [];
-    const allRooms = Object.keys(ROOMS);
-    
+    const shuffledRooms = shuffleArray(Object.keys(ROOMS)); // NOVO
+
     const itemsToSpawn = [
       ITEM_TYPES.ENERGETICO,
       ITEM_TYPES.ENERGETICO,
+      ITEM_TYPES.ENERGETICO,
+      ITEM_TYPES.BANANA,
       ITEM_TYPES.BANANA,
       ITEM_TYPES.BANANA
     ];
 
     itemsToSpawn.forEach((item, index) => {
-      const randomRoom = allRooms[Math.floor(Math.random() * allRooms.length)];
-      const pos = spawnFreeItemPoint(randomRoom, item.w, item.h);
+      const room = shuffledRooms[index];
+      const pos = spawnFreeItemPoint(room, item.w, item.h);
 
       roomItems.push({
         id: `item-${index}-${Date.now()}`,
         type: item.type,
-        room: randomRoom,
+        room,
         x: pos.x,
         y: pos.y,
         w: item.w,
         h: item.h
       });
     });
+  }
+
+  function shuffleArray(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
   }
 
   function spawnFreeItemPoint(roomId, itemW, itemH) {
