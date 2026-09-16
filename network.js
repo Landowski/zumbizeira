@@ -400,7 +400,7 @@ function spawnFarFrom(roomId, others, minDistance) {
     if (type === "energetico") {
       p.energeticoUntil = Date.now() + 8000;
     } else if (type === "banana") {
-      const offset = 40;
+      const offset = 66;
       const dir = p.facing === "left" ? 1 : -1;
       const bw = ITEM_TYPES.BANANA.w, bh = ITEM_TYPES.BANANA.h;
       const dropX = Math.min(ROOM_W - bw, Math.max(0, p.x + dir * offset));
