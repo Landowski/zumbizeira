@@ -19,6 +19,7 @@ const joystickZone = document.getElementById("joystickZone");
 const joystickThumb = document.getElementById("joystickThumb");
 const sprintBtn = document.getElementById("sprintBtn");
 const actionBtn = document.getElementById("actionBtn");
+const actionBtnImg = actionBtn.querySelector("img");
 const lobbyLeaveBtn = document.getElementById("lobbyLeaveBtn");
 const gameOverEl = document.getElementById("gameOver");
 const gameOverText = document.getElementById("gameOverText");
@@ -27,10 +28,15 @@ const leaveBtn = document.getElementById("leaveBtn");
 const nameInput = document.getElementById("name");
 const characterOptions = document.querySelectorAll(".player-option");
 const savedName = localStorage.getItem("playerName") || "Jogador";
-const DEBUG_COLLIDERS = false; // ***
-const MIN_PLAYERS = 2; // ***
+const DEBUG_COLLIDERS = false;
+const MIN_PLAYERS = 2;
 const prevInfected = new Map();
 const prevRoomLightOn = {};
+const imgEnergetico = new Image();
+imgEnergetico.src = "img/item-energetico.png";
+const imgBanana = new Image();
+imgBanana.src = "img/item-banana.png";
+let currentRoomItems = [];
 let joined = false;
 let latestState = [];
 let latestRoomLights = {};
@@ -98,10 +104,19 @@ const HIDING_OBJECTS_KEYS = new Set([
   "img/quarto-mesa-direita.png_1127_519",
   "img/quarto-estante.png_424_138",
 
+  "img/banheiro-planta.png_141_579",
+  "img/banheiro-maquina.png_1028_167",
+  "img/banheiro-armario.png_211_183",
+
   "img/rua-arbusto-baixo.png_357_663",
   "img/rua-arbusto-baixo.png_1017_663",
   "img/rua-arbusto-esquerdo.png_187_663",
   "img/rua-arvore.png_518_0",
+
+  "img/rua2-pinheiros.png_8_7",
+  "img/rua2-arbustos.png_187_660",
+  "img/rua2-arbusto.png_1016_661",
+  "img/rua2-arvore.png_777_368",
 
   "img/cozinha-mesa.png_489_420",
   "img/cozinha-armarinho.png_48_142",
@@ -118,6 +133,58 @@ const HIDING_OBJECTS_KEYS = new Set([
   "img/porao-armario.png_871_165",
   "img/porao-caixas-direita.png_1231_430"
 ]);
+
+let currentRoomExitCooldown = false;
+
+let playerTransition = null;
+
+function checkRoomExitsLocal(me) {
+  if (!me || currentRoomExitCooldown || playerTransition) return;
+
+  const room = ROOMS[me.room];
+  if (!room || !room.exits) return;
+
+  for (const exit of room.exits) {
+    const isColliding =
+      me.x < exit.x + exit.w &&
+      me.x + Network.PLAYER_W > exit.x &&
+      me.y < exit.y + exit.h &&
+      me.y + Network.PLAYER_H > exit.y;
+
+    if (isColliding) {
+      currentRoomExitCooldown = true;
+
+      if (me.room === "rua2" && exit.toRoom === "quintal") {
+        playSfx(SFX.pula);
+        
+        playerTransition = {
+          type: "pula-pula",
+          phase: "jumping_out",
+          progress: 0,
+          toRoom: exit.toRoom,
+          spawnX: exit.spawnX,
+          spawnY: exit.spawnY
+        };
+      } 
+      else if (me.room === "rua2" && exit.toRoom === "cozinha") {
+        playSfx(SFX.pulo);
+        
+        Network.changeRoom(exit.toRoom, exit.spawnX, exit.spawnY);
+        playerTransition = {
+          type: "janela",
+          phase: "falling_in",
+          progress: 0,
+          spawnY: exit.spawnY
+        };
+      } else {
+        Network.changeRoom(exit.toRoom, exit.spawnX, exit.spawnY);
+      }
+
+      setTimeout(() => { currentRoomExitCooldown = false; }, 500);
+      break;
+    }
+  }
+}
 
 const imageCache = new Map();
 function loadImageWithFallback(src, w, h, label) {
@@ -163,7 +230,6 @@ function drawObject(o) {
 function preloadAssets() {
   Object.values(ROOMS).forEach((room) => {
     loadImageWithFallback(room.bg, ROOM_W, ROOM_H, room.bg);
-    (room.staticBack || []).forEach((o) => loadImageWithFallback(o.src, o.w, o.h, o.src));
     (room.staticFront || []).forEach((o) => loadImageWithFallback(o.src, o.w, o.h, o.src));
     (room.ySort || []).forEach((o) => loadImageWithFallback(o.src, o.w, o.h, o.src));
     if (room.lightSwitch) {
@@ -226,6 +292,31 @@ function updateAnimState(players) {
   });
 }
 
+function updatePlayerTransition(p) {
+  if (!playerTransition || p.id !== Network.myPeerId) return 0;
+
+  if (playerTransition.phase === "jumping_out") {
+    playerTransition.progress += 0.05;
+    if (playerTransition.progress >= 1) {
+      Network.changeRoom(playerTransition.toRoom, playerTransition.spawnX, playerTransition.spawnY);
+      playerTransition.phase = "falling_in";
+      playerTransition.progress = 0;
+    }
+    return -300 * Math.sin(playerTransition.progress * (Math.PI / 2));
+  }
+
+  if (playerTransition.phase === "falling_in") {
+    playerTransition.progress += 0.05;
+    if (playerTransition.progress >= 1) {
+      playerTransition = null;
+      return 0;
+    }
+    return -300 * (1 - Math.sin(playerTransition.progress * (Math.PI / 2)));
+  }
+
+  return 0;
+}
+
 function drawPlayerSprite(p, isHidden = false) {
   const spriteSet = PLAYER_SPRITES[p.color];
   if (!spriteSet) return;
@@ -245,14 +336,15 @@ function drawPlayerSprite(p, isHidden = false) {
     bounceY = -5;
   }
 
-  const drawX = p.x + (Network.PLAYER_W - frameW) / 2;
-  const drawY = (p.y + Network.PLAYER_H - frameH) + bounceY;
+  const transitionOffsetY = updatePlayerTransition(p);
 
-  if (!isHidden) {
+  const drawX = p.x + (Network.PLAYER_W - frameW) / 2;
+  const drawY = (p.y + Network.PLAYER_H - frameH) + bounceY + transitionOffsetY;
+
+  if (!isHidden && transitionOffsetY === 0) {
     ctx.save();
     const centerX = p.x + Network.PLAYER_W / 2;
     const centerY = p.y + Network.PLAYER_H; 
-    
     ctx.fillStyle = "rgba(0, 0, 0, 0.3)"; 
     ctx.beginPath();
     ctx.ellipse(centerX, centerY, 20, 8, 0, 0, 2 * Math.PI);
@@ -277,7 +369,7 @@ function drawPlayerSprite(p, isHidden = false) {
 
   if (!isHidden) {
     ctx.save();
-    ctx.font = '17px "Press Start 2P", sans-serif';
+    ctx.font = '20px "Press Start 2P", sans-serif';
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
 
@@ -297,13 +389,42 @@ function drawPlayerSprite(p, isHidden = false) {
   }
 }
 
+function drawMapItems(currentRoom) {
+  if (!currentRoomItems || currentRoomItems.length === 0) return;
+
+  currentRoomItems.forEach((item) => {
+    if (item.room !== currentRoom) return;
+
+    ctx.save();
+    const centerX = item.x + item.w / 2;
+    const centerY = item.y + item.h;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, item.w / 2.5, item.h / 10, 0, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.restore();
+
+    const img = item.type === "energetico" ? imgEnergetico : imgBanana;
+
+    if (item.dropped) {
+      ctx.save();
+      ctx.translate(item.x + item.w / 2, item.y + item.h / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(img, -item.w / 2, -item.h / 2, item.w, item.h);
+      ctx.restore();
+    } else {
+      ctx.drawImage(img, item.x, item.y, item.w, item.h);
+    }
+  });
+}
+
 function drawRoomScene(roomId, roomPlayers) {
   const room = ROOMS[roomId];
   if (!room) return;
 
   drawWithFallback(loadImageWithFallback(room.bg, ROOM_W, ROOM_H, room.bg), 0, 0);
 
-  (room.staticBack || []).forEach(drawObject);
+  drawMapItems(roomId);
 
   if (room.lightSwitch) {
     drawWithFallback(
@@ -392,6 +513,16 @@ function drawRoomScene(roomId, roomPlayers) {
       ctx.closePath();
       ctx.fill();
     });
+
+    ctx.fillStyle = "rgba(0, 255, 0, 0.4)";
+    ctx.strokeStyle = "rgba(0, 255, 0, 0.9)";
+
+    (room.exits || []).forEach((ex) => {
+      ctx.fillRect(ex.x, ex.y, ex.w, ex.h);
+      ctx.strokeRect(ex.x, ex.y, ex.w, ex.h);
+    });
+
+    ctx.restore();
 
     ctx.restore();
   }
@@ -536,7 +667,29 @@ Network.on("onGameStart", (musicTrack) => {
   startMusic(musicTrack);
 });
 
-Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText }) => {
+Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText, items, pickedItems, itemsUsed, bananaSlips }) => {
+  const me = players.find((p) => p.id === Network.myPeerId);
+
+  if (me && pickedItems && pickedItems.length) {
+    pickedItems.forEach((pi) => {
+      if (pi.room === me.room) playSfx(SFX.item);
+    });
+  }
+
+  if (me && itemsUsed && itemsUsed.length) {
+    itemsUsed.forEach((iu) => {
+      if (iu.room === me.room) playSfx(SFX.itemUsado);
+    });
+  }
+
+  if (me && bananaSlips && bananaSlips.length) {
+    bananaSlips.forEach((bs) => {
+      if (bs.room === me.room) playSfx(SFX.banana);
+    });
+  }
+
+  currentRoomItems = items || [];
+
   if (countdownText && !countdownSoundPlayed) {
     playSfx(SFX.contagem);
     countdownSoundPlayed = true;
@@ -549,7 +702,8 @@ Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText }) => 
   latestState = players;
   latestRoomLights = roomLights || {};
 
-  const me = players.find((p) => p.id === Network.myPeerId);
+  updateActionButtonIcon(me ? me.heldItem : null);
+
   const myRoom = me && me.room;
 
   players.forEach((p) => {
@@ -557,7 +711,7 @@ Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText }) => 
     if (was === false && p.infected === true) {
       
       const playerName = p.name || "Jogador";
-      const message = `${playerName} foi infectado!`;
+      const message = `${playerName} virou zumbi!`;
 
       if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Toast) {
         window.Capacitor.Plugins.Toast.show({
@@ -612,7 +766,6 @@ Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText }) => 
 });
 
 Network.on("onGameOver", ({ reason, survivors }) => {
-  // Reset manual imediato das luzes no client
   if (latestRoomLights) {
     Object.keys(latestRoomLights).forEach((rid) => {
       latestRoomLights[rid] = { on: true, blackoutEndsAt: 0 };
@@ -621,6 +774,7 @@ Network.on("onGameOver", ({ reason, survivors }) => {
   countdownSoundPlayed = false;
   updateCountdownUI(null);
   stopMusic();
+  updateActionButtonIcon(null);
   stopAllLoopAudios();
   gameOverEl.classList.remove("hidden");
   const youSurvived = survivors.includes(Network.myPeerId);
@@ -700,10 +854,7 @@ function gamepadVector() {
   if (gp.buttons[12] && gp.buttons[12].pressed) dy = -1;
   if (gp.buttons[13] && gp.buttons[13].pressed) dy = 1;
 
-  // Sprint: Exclusivo Botão A / Cross (Index 0)
   const sprint = !!(gp.buttons[0] && gp.buttons[0].pressed);
-
-  // Ação: Exclusivo Botão B / Circle (Index 1)
   const action = !!(gp.buttons[1] && gp.buttons[1].pressed);
 
   return { dx, dy, sprint, action };
@@ -800,16 +951,27 @@ function nearLightSwitch() {
   );
 }
 
+function updateActionButtonIcon(heldItem) {
+  if (!actionBtnImg) return;
+  if (heldItem === "energetico") actionBtnImg.src = "img/item-energetico.png";
+  else if (heldItem === "banana") actionBtnImg.src = "img/item-banana.png";
+  else actionBtnImg.src = "img/item-lampada.png";
+}
+
 let sprintHeld = false;
 let actionTriggered = false;
 
 function triggerAction() {
+  const me = latestState.find((p) => p.id === Network.myPeerId);
+  if (me && me.heldItem) {
+    Network.useItem();
+    return;
+  }
   if (nearLightSwitch()) {
     Network.toggleLight();
   }
 }
 
-// Sprint - Touch e Mouse
 sprintBtn.addEventListener("touchstart", (e) => {
   e.preventDefault();
   sprintHeld = true;
@@ -819,7 +981,6 @@ sprintBtn.addEventListener("touchcancel", () => (sprintHeld = false));
 sprintBtn.addEventListener("mousedown", () => (sprintHeld = true));
 window.addEventListener("mouseup", () => (sprintHeld = false));
 
-// Sprint - Teclado (Espaço)
 window.addEventListener("keydown", (e) => {
   if (e.key === " ") sprintHeld = true;
 });
@@ -827,14 +988,12 @@ window.addEventListener("keyup", (e) => {
   if (e.key === " ") sprintHeld = false;
 });
 
-// Ação - Touch e Mouse (actionBtn)
 actionBtn.addEventListener("touchstart", (e) => {
   e.preventDefault();
   triggerAction();
 }, { passive: false });
 actionBtn.addEventListener("click", triggerAction);
 
-// Ação - Teclado (Tecla 'E')
 window.addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "e" && !e.repeat) {
     triggerAction();
@@ -852,6 +1011,17 @@ let wasPadActionPressed = false;
 
 startWorkerIntervalLocal(50, () => {
   if (gameEl.classList.contains("hidden")) return;
+
+  const me = latestState.find((p) => p.id === Network.myPeerId);
+  if (me) {
+    checkRoomExitsLocal(me);
+  }
+
+  if (playerTransition) {
+    Network.sendInput(0, 0, false);
+    return;
+  }
+
   const kb = keyboardVector();
   const gp = gamepadVector();
   if (gp.action && !wasPadActionPressed) {

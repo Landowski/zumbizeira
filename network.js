@@ -15,8 +15,18 @@ const Network = (() => {
   const SPRINT_COOLDOWN = 3000;
   const TICK_MS = 50;
   const DEFAULT_DURATION_MIN = 2;
-  const BLACKOUT_MS = 8000;
-  const TRANSFORM_MS = 3000;
+  const BLACKOUT_MS = 6000;
+  const TRANSFORM_MS = 2000;
+
+  const ITEM_TYPES = {
+  ENERGETICO: { type: "energetico", w: 25, h: 42, sprite: "item-energetico.png" },
+  BANANA: { type: "banana", w: 32, h: 36, sprite: "item-banana.png" }
+  };
+
+  let roomItems = [];
+  let bananaTraps = [];
+  let pendingItemUseEvents = [];
+  let pendingBananaSlipEvents = [];
 
   let currentDurationMin = DEFAULT_DURATION_MIN;
 
@@ -41,9 +51,57 @@ const Network = (() => {
   let hostConn = null;
   let myColor = null;
 
+  function spawnMapItems() {
+    roomItems = [];
+    const allRooms = Object.keys(ROOMS);
+    
+    const itemsToSpawn = [
+      ITEM_TYPES.ENERGETICO,
+      ITEM_TYPES.ENERGETICO,
+      ITEM_TYPES.BANANA,
+      ITEM_TYPES.BANANA
+    ];
+
+    itemsToSpawn.forEach((item, index) => {
+      const randomRoom = allRooms[Math.floor(Math.random() * allRooms.length)];
+      const pos = spawnFreeItemPoint(randomRoom, item.w, item.h);
+
+      roomItems.push({
+        id: `item-${index}-${Date.now()}`,
+        type: item.type,
+        room: randomRoom,
+        x: pos.x,
+        y: pos.y,
+        w: item.w,
+        h: item.h
+      });
+    });
+  }
+
+  function spawnFreeItemPoint(roomId, itemW, itemH) {
+    const minY = roomId === "sala" ? 160 : 0;
+    const maxY = ROOM_H - itemH;
+
+    for (let i = 0; i < 300; i++) {
+      const c = {
+        x: Math.random() * (ROOM_W - itemW),
+        y: minY + Math.random() * (maxY - minY),
+      };
+      if (!collidesInRoom(roomId, { x: c.x, y: c.y, w: itemW, h: itemH })) {
+        return c;
+      }
+    }
+    return { x: 100, y: 200 };
+  }
+
   function setPlayerColor(color) {
-    if (COLORS.includes(color)) {
-      myRequestedColor = color;
+    if (!COLORS.includes(color)) return;
+    myRequestedColor = color;
+
+    if (isHost) {
+      handleColorChange(myPeerId, color);
+    } else if (hostConn && hostConn.open) {
+      hostConn.send({ type: "SET_COLOR", peerId: myPeerId, requestedColor: color });
     }
   }
 
@@ -278,6 +336,12 @@ function spawnFarFrom(roomId, others, minDistance) {
       case "LEAVE":
         removePlayer(conn.peer);
         break;
+      case "SET_COLOR":
+        handleColorChange(msg.peerId || conn.peer, msg.requestedColor);
+        break;
+      case "USE_ITEM":
+        handleUseItem(msg.peerId || conn.peer);
+        break;
       case "INPUT":
         if (p) {
           p.input = { dx: msg.dx, dy: msg.dy, sprint: msg.sprint };
@@ -287,7 +351,26 @@ function spawnFarFrom(roomId, others, minDistance) {
       case "LIGHT_TOGGLE":
         handleLightToggle(msg.peerId || conn.peer);
         break;
+        case "CHANGE_ROOM":
+          if (p) {
+            p.room = msg.toRoom;
+            p.x = msg.spawnX;
+            p.y = msg.spawnY;
+            p.invulnerableUntil = Date.now() + 1500; 
+          }
+          break;
     }
+  }
+
+  function handleColorChange(peerId, requestedColor) {
+    const p = players.get(peerId);
+    if (!p || !COLORS.includes(requestedColor)) return;
+
+    p.color = requestedColor;
+    broadcastState();
+
+    if (p.conn) p.conn.send({ type: "ASSIGN_COLOR", color: p.color });
+    else myColor = p.color;
   }
 
   function handleLightToggle(peerId) {
@@ -305,6 +388,35 @@ function spawnFarFrom(roomId, others, minDistance) {
       ls.on = true;
       ls.blackoutEndsAt = 0;
     }
+  }
+
+  function handleUseItem(peerId) {
+    const p = players.get(peerId);
+    if (!p || !p.alive || p.transforming || !p.heldItem) return;
+
+    const type = p.heldItem;
+    p.heldItem = null;
+
+    if (type === "energetico") {
+      p.energeticoUntil = Date.now() + 8000;
+    } else if (type === "banana") {
+      const offset = 40;
+      const dir = p.facing === "left" ? 1 : -1;
+      const bw = ITEM_TYPES.BANANA.w, bh = ITEM_TYPES.BANANA.h;
+      const dropX = Math.min(ROOM_W - bw, Math.max(0, p.x + dir * offset));
+      bananaTraps.push({
+        id: `banana-drop-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        type: "banana",
+        dropped: true,
+        room: p.room,
+        x: dropX,
+        y: p.y + PLAYER_H - bh,
+        w: bw,
+        h: bh,
+      });
+    }
+
+    pendingItemUseEvents.push({ room: p.room, type });
   }
 
   function addPlayer(peerId, conn, name, requestedColor) {
@@ -374,6 +486,10 @@ function spawnFarFrom(roomId, others, minDistance) {
 
   function startGame(durationMin) {
     if (!isHost || players.size < 2) return;
+    spawnMapItems();
+    bananaTraps = [];
+    pendingItemUseEvents = [];
+    pendingBananaSlipEvents = [];
     if (typeof durationMin === "number") currentDurationMin = durationMin;
 
     const ids = [...players.keys()];
@@ -401,6 +517,9 @@ function spawnFarFrom(roomId, others, minDistance) {
       p.facing = "right";
       p.input = { dx: 0, dy: 0, sprint: false };
       p.sprintUntil = 0;
+      p.heldItem = null;
+      p.energeticoUntil = 0;
+      p.slowUntil = 0;
       p.sprintCooldownUntil = 0;
     });
 
@@ -426,8 +545,10 @@ function spawnFarFrom(roomId, others, minDistance) {
       p.facing = "right";
       p.input = { dx: 0, dy: 0, sprint: false };
       p.sprintUntil = 0;
+      p.heldItem = null;
+      p.energeticoUntil = 0;
+      p.slowUntil = 0;
       p.sprintCooldownUntil = 0;
-
     }
 
     roomLights = {};
@@ -493,12 +614,14 @@ function spawnFarFrom(roomId, others, minDistance) {
       else if (ndx < -0.05) p.facing = "left";
 
       if (p.input.sprint && now >= p.sprintCooldownUntil) {
-        p.sprintUntil = now + SPRINT_DURATION;
+        const sprintDurationMult = now < (p.energeticoUntil || 0) ? 2 : 1;
+        p.sprintUntil = now + SPRINT_DURATION * sprintDurationMult;
         p.sprintCooldownUntil = p.sprintUntil + SPRINT_COOLDOWN;
       }
 
       const isSprinting = now < p.sprintUntil;
-      const speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
+      let speed = isSprinting ? SURVIVOR_SPEED * SPRINT_MULT : SURVIVOR_SPEED;
+      if (now < (p.slowUntil || 0)) speed *= 0.5;
 
       if (moving) {
         const targetX = Math.min(ROOM_W - PLAYER_W, Math.max(0, p.x + ndx * speed * dt));
@@ -547,10 +670,14 @@ function spawnFarFrom(roomId, others, minDistance) {
           }
 
           if (triggered) {
-            p.room = ex.toRoom;
-            p.x = ex.spawnX;
-            p.y = ex.spawnY;
-            p.invulnerableUntil = now + 1500;
+            const isSpecialExit = (p.room === "rua2" && (ex.toRoom === "quintal" || ex.toRoom === "cozinha"));
+            
+            if (!isSpecialExit) {
+              p.room = ex.toRoom;
+              p.x = ex.spawnX;
+              p.y = ex.spawnY;
+              p.invulnerableUntil = now + 600;
+            }
             break;
           }
         }
@@ -558,9 +685,12 @@ function spawnFarFrom(roomId, others, minDistance) {
     });
 
     const infectedByRoom = {};
+    const pickedItems = [];
+
     players.forEach((p) => {
       if (p.infected && !p.transforming) (infectedByRoom[p.room] ||= []).push(p);
     });
+
     players.forEach((p) => {
       if (p.infected || now < (p.invulnerableUntil || 0)) return;
 
@@ -579,31 +709,68 @@ function spawnFarFrom(roomId, others, minDistance) {
     const survivorsLeft = [...players.values()].filter((p) => !p.infected).length;
     const timeLeft = gameEndTime === Infinity ? null : Math.max(0, Math.round((gameEndTime - now) / 1000));
 
-    broadcastGameState(timeLeft, countdownText);
+    players.forEach((p) => {
+      if (!p.alive) return;
+      const pBox = playerBox(p.x, p.y);
+
+      for (let i = roomItems.length - 1; i >= 0; i--) {
+        const item = roomItems[i];
+        if (p.room === item.room) {
+          const itemBox = { x: item.x, y: item.y, w: item.w, h: item.h };
+          if (rectsOverlap(pBox, itemBox)) {
+            p.heldItem = item.type;
+            pickedItems.push({ room: item.room, type: item.type });
+            roomItems.splice(i, 1);
+          }
+        }
+      }
+
+      for (let i = bananaTraps.length - 1; i >= 0; i--) {
+        const b = bananaTraps[i];
+        if (p.room === b.room) {
+          const bBox = { x: b.x, y: b.y, w: b.w, h: b.h };
+          if (rectsOverlap(pBox, bBox)) {
+            p.slowUntil = now + 5000;
+            pendingBananaSlipEvents.push({ room: b.room });
+            bananaTraps.splice(i, 1);
+          }
+        }
+      }
+    });
+
+    broadcastGameState(timeLeft, countdownText, pickedItems);
 
     if (survivorsLeft === 0) return endGame("lastSurvivor");
     if (timeLeft !== null && timeLeft <= 0) return endGame("time");
   }
 
-  function broadcastGameState(timeLeft, countdownText) {
-    const now = Date.now();
-    const list = [...players.entries()].map(([id, p]) => ({
-      id,
-      x: p.x,
-      y: p.y,
-      color: p.color,
-      name: p.name || "Jogador",
-      infected: p.infected,
-      transforming: !!p.transforming,
-      room: p.room,
-      facing: p.facing,
-      sprintReady: now >= p.sprintCooldownUntil,
-      sprinting: now < p.sprintUntil,
-    }));
-    const lights = { ...roomLights };
-    broadcastMessage({ type: "GAME_STATE", players: list, timeLeft, roomLights: lights, countdownText });
-    callbacks.onGameState({ players: list, timeLeft, roomLights: lights, countdownText });
-  }
+function broadcastGameState(timeLeft, countdownText, pickedItems = []) {
+  const now = Date.now();
+  const itemsUsed = pendingItemUseEvents;
+  pendingItemUseEvents = [];
+  const bananaSlips = pendingBananaSlipEvents;
+  pendingBananaSlipEvents = [];
+
+  const list = [...players.entries()].map(([id, p]) => ({
+    id,
+    x: p.x,
+    y: p.y,
+    color: p.color,
+    name: p.name || "Jogador",
+    infected: p.infected,
+    transforming: !!p.transforming,
+    room: p.room,
+    facing: p.facing,
+    sprintReady: now >= p.sprintCooldownUntil,
+    sprinting: now < p.sprintUntil,
+    heldItem: p.heldItem || null,
+  }));
+  const lights = { ...roomLights };
+  const allItems = [...roomItems, ...bananaTraps];
+
+ broadcastMessage({ type: "GAME_STATE", players: list, timeLeft, roomLights: lights, countdownText, items: allItems, pickedItems, itemsUsed, bananaSlips });
+  callbacks.onGameState({ players: list, timeLeft, roomLights: lights, countdownText, items: allItems, pickedItems, itemsUsed, bananaSlips });
+}
 
 function endGame(reason) {
   restoreAllLights();
@@ -655,7 +822,7 @@ function endGame(reason) {
             callbacks.onGameStart(msg.musicTrack);
             break;
           case "GAME_STATE":
-            callbacks.onGameState({ players: msg.players, timeLeft: msg.timeLeft, roomLights: msg.roomLights, countdownText: msg.countdownText });
+            callbacks.onGameState({ players: msg.players, timeLeft: msg.timeLeft, roomLights: msg.roomLights, countdownText: msg.countdownText, items: msg.items, pickedItems: msg.pickedItems, itemsUsed: msg.itemsUsed, bananaSlips: msg.bananaSlips });
             break;
           case "GAME_OVER":
             callbacks.onGameOver({ reason: msg.reason, survivors: msg.survivors });
@@ -733,6 +900,14 @@ function endGame(reason) {
     }
   }
 
+  function useItem() {
+    if (isHost) {
+      handleUseItem(myPeerId);
+    } else if (hostConn) {
+      hostConn.send({ type: "USE_ITEM", peerId: myPeerId });
+    }
+  }
+
   function restartGame() {
     startGame();
   }
@@ -764,9 +939,24 @@ function endGame(reason) {
     }, 300);
   }
 
+  function changeRoom(toRoom, spawnX, spawnY) {
+    if (isHost) {
+      const p = players.get(myPeerId);
+      if (p) {
+        p.room = toRoom;
+        p.x = spawnX;
+        p.y = spawnY;
+        p.invulnerableUntil = Date.now() + 1500;
+      }
+    } else if (hostConn) {
+      hostConn.send({ type: "CHANGE_ROOM", peerId: myPeerId, toRoom, spawnX, spawnY });
+    }
+  }
+
   return {
     init,
     join,
+    changeRoom,
     setPlayerName,
     setPlayerColor,
     startGame,
@@ -774,6 +964,7 @@ function endGame(reason) {
     leaveRoom,
     sendInput,
     toggleLight,
+    useItem,
     isHostAlive,
     on(name, fn) {
       callbacks[name] = fn;

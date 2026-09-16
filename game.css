@@ -315,7 +315,7 @@ canvas {
   justify-content: center;
   padding: 0 !important;
   position: absolute;
-  right: 15px;
+  right: 110px;
   width: 50px;
   height: 50px;
   border-radius: 360px;
@@ -329,7 +329,11 @@ canvas {
 }
 
 #sprintBtn {
-    bottom: 50px !important;
+    bottom: 40px !important;
+}
+
+#sprintBtn img, #actionBtn img {
+    opacity: 0.4;
 }
 
 #sprintBtn.on-cooldown {
@@ -338,7 +342,7 @@ canvas {
 }
 
 #actionBtn {
-  bottom: 120px !important;
+  bottom: 100px !important;
 }
 
 #gameOver {

@@ -8,6 +8,11 @@ const SFX = {
   interruptor: `${AUDIO_DIR}som-interruptor.mp3`,
   tempo: `${AUDIO_DIR}som-tempo.mp3`,
   contagem: `${AUDIO_DIR}som-contagem.mp3`,
+  pula: `${AUDIO_DIR}som-pula.mp3`,
+  pulo: `${AUDIO_DIR}som-pulo.mp3`,
+  item: `${AUDIO_DIR}som-item.mp3`,
+  itemUsado: `${AUDIO_DIR}som-item-usa.mp3`,
+  banana: `${AUDIO_DIR}som-escorrega.mp3`,
 };
 
 const MUSIC_TRACKS = [1, 2, 3, 4, 5, 6].map((n) => `${AUDIO_DIR}musica-${n}.mp3`);
