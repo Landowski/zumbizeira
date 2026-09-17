@@ -27,6 +27,7 @@ const Network = (() => {
   let bananaTraps = [];
   let pendingItemUseEvents = [];
   let pendingBananaSlipEvents = [];
+  let pendingWhistleEvents = [];
 
   let currentDurationMin = DEFAULT_DURATION_MIN;
 
@@ -187,6 +188,12 @@ const Network = (() => {
     if (!room) return false;
     if (room.diagonals.some((d) => collidesWithDiagonal(d, box))) return true;
     return room.walls.some((w) => rectsOverlap(box, w));
+  }
+
+  function handleWhistle(peerId) {
+    const p = players.get(peerId);
+    if (!p || !p.alive || p.infected || p.transforming) return;
+    pendingWhistleEvents.push({ room: p.room, senderId: peerId });
   }
 
 function spawnFreePoint(roomId) {
@@ -353,6 +360,9 @@ function spawnFarFrom(roomId, others, minDistance) {
       case "USE_ITEM":
         handleUseItem(msg.peerId || conn.peer);
         break;
+        case "WHISTLE":
+        handleWhistle(msg.peerId || conn.peer);
+        break;
       case "INPUT":
         if (p) {
           p.input = { dx: msg.dx, dy: msg.dy, sprint: msg.sprint };
@@ -409,7 +419,7 @@ function spawnFarFrom(roomId, others, minDistance) {
     p.heldItem = null;
 
     if (type === "energetico") {
-      p.energeticoUntil = Date.now() + 8000;
+      p.energeticoUntil = Date.now() + 9000;
     } else if (type === "banana") {
       const offset = 66;
       const dir = p.facing === "left" ? 1 : -1;
@@ -498,6 +508,7 @@ function spawnFarFrom(roomId, others, minDistance) {
   function startGame(durationMin) {
     if (!isHost || players.size < 2) return;
     spawnMapItems();
+    pendingWhistleEvents = [];
     bananaTraps = [];
     pendingItemUseEvents = [];
     pendingBananaSlipEvents = [];
@@ -687,7 +698,7 @@ function spawnFarFrom(roomId, others, minDistance) {
               p.room = ex.toRoom;
               p.x = ex.spawnX;
               p.y = ex.spawnY;
-              p.invulnerableUntil = now + 600;
+              p.invulnerableUntil = now + 300;
             }
             break;
           }
@@ -722,7 +733,7 @@ function spawnFarFrom(roomId, others, minDistance) {
 
     players.forEach((p) => {
       if (!p.alive) return;
-      const pBox = playerBox(p.x, p.y);
+      const pBox = feetBox(p.x, p.y);
 
       for (let i = roomItems.length - 1; i >= 0; i--) {
         const item = roomItems[i];
@@ -761,6 +772,8 @@ function broadcastGameState(timeLeft, countdownText, pickedItems = []) {
   pendingItemUseEvents = [];
   const bananaSlips = pendingBananaSlipEvents;
   pendingBananaSlipEvents = [];
+  const whistles = pendingWhistleEvents;
+  pendingWhistleEvents = [];
 
   const list = [...players.entries()].map(([id, p]) => ({
     id,
@@ -775,12 +788,21 @@ function broadcastGameState(timeLeft, countdownText, pickedItems = []) {
     sprintReady: now >= p.sprintCooldownUntil,
     sprinting: now < p.sprintUntil,
     heldItem: p.heldItem || null,
+    energeticoUntil: p.energeticoUntil || 0,
   }));
   const lights = { ...roomLights };
   const allItems = [...roomItems, ...bananaTraps];
 
- broadcastMessage({ type: "GAME_STATE", players: list, timeLeft, roomLights: lights, countdownText, items: allItems, pickedItems, itemsUsed, bananaSlips });
-  callbacks.onGameState({ players: list, timeLeft, roomLights: lights, countdownText, items: allItems, pickedItems, itemsUsed, bananaSlips });
+ broadcastMessage({ type: "GAME_STATE", players: list, timeLeft, roomLights: lights, countdownText, items: allItems, pickedItems, itemsUsed, bananaSlips, whistles });
+  callbacks.onGameState({ players: list, timeLeft, roomLights: lights, countdownText, items: allItems, pickedItems, itemsUsed, bananaSlips, whistles });
+}
+
+function whistle() {
+  if (isHost) {
+    handleWhistle(myPeerId);
+  } else if (hostConn) {
+    hostConn.send({ type: "WHISTLE", peerId: myPeerId });
+  }
 }
 
 function endGame(reason) {
@@ -833,7 +855,7 @@ function endGame(reason) {
             callbacks.onGameStart(msg.musicTrack);
             break;
           case "GAME_STATE":
-            callbacks.onGameState({ players: msg.players, timeLeft: msg.timeLeft, roomLights: msg.roomLights, countdownText: msg.countdownText, items: msg.items, pickedItems: msg.pickedItems, itemsUsed: msg.itemsUsed, bananaSlips: msg.bananaSlips });
+            callbacks.onGameState({ players: msg.players, timeLeft: msg.timeLeft, roomLights: msg.roomLights, countdownText: msg.countdownText, items: msg.items, pickedItems: msg.pickedItems, itemsUsed: msg.itemsUsed, bananaSlips: msg.bananaSlips, whistles: msg.whistles });
             break;
           case "GAME_OVER":
             callbacks.onGameOver({ reason: msg.reason, survivors: msg.survivors });
@@ -976,6 +998,7 @@ function endGame(reason) {
     sendInput,
     toggleLight,
     useItem,
+    whistle,
     isHostAlive,
     on(name, fn) {
       callbacks[name] = fn;

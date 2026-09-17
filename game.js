@@ -19,6 +19,7 @@ const joystickZone = document.getElementById("joystickZone");
 const joystickThumb = document.getElementById("joystickThumb");
 const sprintBtn = document.getElementById("sprintBtn");
 const actionBtn = document.getElementById("actionBtn");
+const whistleBtn = document.getElementById("whistleBtn");
 const actionBtnImg = actionBtn.querySelector("img");
 const lobbyLeaveBtn = document.getElementById("lobbyLeaveBtn");
 const gameOverEl = document.getElementById("gameOver");
@@ -385,6 +386,19 @@ function drawPlayerSprite(p, isHidden = false) {
     ctx.fillStyle = "#ffffff";
     ctx.fillText(nameText, nameX, nameY);
 
+    if (p.energeticoUntil && p.energeticoUntil > Date.now()) {
+          const secondsLeft = Math.ceil((p.energeticoUntil - Date.now()) / 1000);
+          const counterY = nameY - 22;
+          ctx.font = '28px "Press Start 2P", sans-serif';
+
+          ctx.strokeStyle = "#000000";
+          ctx.lineWidth = 3;
+          ctx.strokeText(`⚡${secondsLeft}s`, nameX, counterY);
+
+          ctx.fillStyle = "#ffe066";
+          ctx.fillText(`⚡${secondsLeft}s`, nameX, counterY);
+    }
+
     ctx.restore();
   }
 }
@@ -531,7 +545,7 @@ function drawRoomScene(roomId, roomPlayers) {
 }
 
 function renderPlayerList(players) {
-  playerCountEl.textContent = `${players.length} / ${Network.MAX_PLAYERS} na sala`;
+  playerCountEl.textContent = `${players.length}/${Network.MAX_PLAYERS} na sala`;
 }
 
 let activeToast = null;
@@ -597,22 +611,22 @@ Network.on("onRoomUpdate", (data) => {
 
   if (!hostAlive) {
     statusEl.textContent = data
-      ? "O dono da sala caiu. Seja o novo dono."
-      : "Sala vazia. Seja o primeiro a entrar.";
+      ? "Entre e seja o dono"
+      : "Sala vazia";
     joinBtn.disabled = false;
     playerCountEl.textContent = "";
     return;
   }
 
   if (data.status === "playing") {
-    statusEl.textContent = "Partida em andamento. Aguarde a próxima.";
+    statusEl.textContent = "Partida em andamento";
     joinBtn.disabled = true;
     return;
   }
 
   const full = data.playerCount >= Network.MAX_PLAYERS;
-  playerCountEl.textContent = `${data.playerCount} / ${Network.MAX_PLAYERS} na sala`;
-  statusEl.textContent = full ? "Sala cheia." : "Sala aberta.";
+  playerCountEl.textContent = `${data.playerCount}/${Network.MAX_PLAYERS} na sala`;
+  statusEl.textContent = full ? "Sala cheia" : "Sala aberta";
   joinBtn.disabled = full;
 });
 
@@ -623,7 +637,7 @@ Network.on("onStateSync", (players) => {
   renderPlayerList(players);
 
   if (Network.isHost) {
-    statusEl.textContent = "Você é o dono da sala.";
+    statusEl.textContent = "Você é o dono";
     startBtn.classList.remove("hidden");
     startBtn.disabled = players.length < MIN_PLAYERS;
     startBtn.textContent =
@@ -632,18 +646,18 @@ Network.on("onStateSync", (players) => {
         : "Iniciar";
     timeEl.classList.remove("hidden");
   } else {
-    statusEl.textContent = "Aguardando o dono iniciar.";
+    statusEl.textContent = "Aguarde o dono iniciar";
     startBtn.classList.add("hidden");
     timeEl.classList.add("hidden");
   }
 });
 
 Network.on("onColorAssigned", () => {
-  statusEl.textContent = "Você entrou na sala.";
+  statusEl.textContent = "Você entrou";
 });
 
 Network.on("onRoomFull", () => {
-  statusEl.textContent = "Sala cheia. Aguarde uma vaga.";
+  statusEl.textContent = "Sala cheia, aguarde vaga";
   joinBtn.disabled = true;
 });
 
@@ -667,8 +681,26 @@ Network.on("onGameStart", (musicTrack) => {
   startMusic(musicTrack);
 });
 
-Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText, items, pickedItems, itemsUsed, bananaSlips }) => {
+Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText, items, pickedItems, itemsUsed, bananaSlips, whistles }) => {
   const me = players.find((p) => p.id === Network.myPeerId);
+
+  if (me) {
+    const survivorsInMyRoom = players.filter(
+      (p) => p.room === me.room && !p.infected
+    );
+    if (!me.infected && survivorsInMyRoom.length >= 2) {
+      whistleBtn.classList.remove("hidden");
+    } else {
+      whistleBtn.classList.add("hidden");
+    }
+    if (whistles && whistles.length > 0) {
+      whistles.forEach((w) => {
+        if (w.room === me.room && !me.infected) {
+          playSfx(SFX.assovio);
+        }
+      });
+    }
+  }
 
   if (me && pickedItems && pickedItems.length) {
     pickedItems.forEach((pi) => {
@@ -702,7 +734,7 @@ Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText, items
   latestState = players;
   latestRoomLights = roomLights || {};
 
-  updateActionButtonIcon(me ? me.heldItem : null);
+  updateActionButtonState(me);
 
   const myRoom = me && me.room;
 
@@ -733,9 +765,6 @@ Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText, items
   Object.keys(latestRoomLights).forEach((rid) => {
     const isOn = latestRoomLights[rid].on;
     const was = prevRoomLightOn[rid];
-    if (was !== undefined && was !== isOn && rid === myRoom) {
-      playSfx(SFX.interruptor);
-    }
     prevRoomLightOn[rid] = isOn;
   });
 
@@ -774,7 +803,6 @@ Network.on("onGameOver", ({ reason, survivors }) => {
   countdownSoundPlayed = false;
   updateCountdownUI(null);
   stopMusic();
-  updateActionButtonIcon(null);
   stopAllLoopAudios();
   gameOverEl.classList.remove("hidden");
   const youSurvived = survivors.includes(Network.myPeerId);
@@ -786,6 +814,8 @@ Network.on("onGameOver", ({ reason, survivors }) => {
       ? `Tempo esgotado!<br>Você e mais ${Math.max(0, survivors.length - 1)} sobreviveram!`
       : `Tempo esgotado!<br>Os zumbis perderam.`;
 
+  whistleBtn.classList.add("hidden");
+  actionBtn.classList.add("hidden");
   restartBtn.classList.toggle("hidden", !Network.isHost);
   if (Network.isHost) {
     const enough = latestState.length >= MIN_PLAYERS;
@@ -798,7 +828,7 @@ Network.on("onGameOver", ({ reason, survivors }) => {
 
 Network.on("onError", (err) => {
   console.error(err);
-  statusEl.textContent = "Erro de conexão. Recarregue.";
+  statusEl.textContent = "Erro. Recarregue o jogo.";
 });
 
 joinBtn.addEventListener("click", () => {
@@ -951,11 +981,31 @@ function nearLightSwitch() {
   );
 }
 
-function updateActionButtonIcon(heldItem) {
+function updateActionButtonState(me) {
+  if (!me || !actionBtn) return;
+  const hasItem = !!me.heldItem;
+  const isNearLight = nearLightSwitch();
+  if (hasItem || isNearLight) {
+    actionBtn.classList.remove("hidden");
+  } else {
+    actionBtn.classList.add("hidden");
+    return;
+  }
   if (!actionBtnImg) return;
-  if (heldItem === "energetico") actionBtnImg.src = "img/item-energetico.png";
-  else if (heldItem === "banana") actionBtnImg.src = "img/item-banana.png";
-  else actionBtnImg.src = "img/item-lampada.png";
+  if (me.heldItem === "energetico") {
+    actionBtnImg.src = "img/item-energetico.png";
+  } else if (me.heldItem === "banana") {
+    actionBtnImg.src = "img/item-banana.png";
+  } else if (isNearLight) {
+    actionBtnImg.src = "img/item-lampada.png";
+  }
+}
+
+function triggerWhistle() {
+  const me = latestState.find((p) => p.id === Network.myPeerId);
+  if (me && !me.infected) {
+    Network.whistle();
+  }
 }
 
 let sprintHeld = false;
@@ -981,24 +1031,17 @@ sprintBtn.addEventListener("touchcancel", () => (sprintHeld = false));
 sprintBtn.addEventListener("mousedown", () => (sprintHeld = true));
 window.addEventListener("mouseup", () => (sprintHeld = false));
 
-window.addEventListener("keydown", (e) => {
-  if (e.key === " ") sprintHeld = true;
-});
-window.addEventListener("keyup", (e) => {
-  if (e.key === " ") sprintHeld = false;
-});
+whistleBtn.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  triggerWhistle();
+}, { passive: false });
+whistleBtn.addEventListener("click", triggerWhistle);
 
 actionBtn.addEventListener("touchstart", (e) => {
   e.preventDefault();
   triggerAction();
 }, { passive: false });
 actionBtn.addEventListener("click", triggerAction);
-
-window.addEventListener("keydown", (e) => {
-  if (e.key.toLowerCase() === "e" && !e.repeat) {
-    triggerAction();
-  }
-});
 
 function startWorkerIntervalLocal(ms, onTick) {
   const code = `setInterval(() => postMessage(1), ${ms});`;
@@ -1049,6 +1092,8 @@ function drawFrame() {
   const me = latestState.find((p) => p.id === Network.myPeerId);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!me) return;
+
+  updateActionButtonState(me);
 
   const roomId = me.room;
   const room = ROOMS[roomId];
