@@ -1,5 +1,4 @@
 const Network = (() => {
-  const ROOM_ID = "main";
   const MAX_PLAYERS = 6;
   const COLORS = ["azul", "amarelo", "laranja", "rosa", "roxo", "verde"];
 
@@ -39,7 +38,7 @@ const Network = (() => {
   let tickInterval = null;
   let gameEndTime = 0;
   let roomLights = {};
-
+  let roomCode = null;
   let db, roomRef;
   let peer = null;
   let myPeerId = null;
@@ -244,13 +243,23 @@ const Network = (() => {
   function init() {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
-    roomRef = db.collection("rooms").doc(ROOM_ID);
     myPeerId = genId();
 
+    firebase.auth().signInAnonymously().catch((err) => callbacks.onError(err));
+  }
+
+  function watchRoom() {
     roomRef.onSnapshot(
       (doc) => callbacks.onRoomUpdate(doc.exists ? doc.data() : null),
       (err) => callbacks.onError(err)
     );
+  }
+
+  function genRoomCode() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
   }
 
   function isHostAlive(data) {
@@ -262,49 +271,74 @@ const Network = (() => {
     );
   }
 
-  async function join() {
-    if (peer) {
-      peer.destroy();
-      peer = null;
+  async function createRoom() {
+    if (peer) { peer.destroy(); peer = null; }
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const code = genRoomCode();
+      const ref = db.collection("rooms").doc(code);
+
+      try {
+        await db.runTransaction(async (tx) => {
+          const doc = await tx.get(ref);
+          const data = doc.exists ? doc.data() : null;
+          if (isHostAlive(data)) throw { codeTaken: true };
+
+          tx.set(ref, {
+            hostPeerId: myPeerId,
+            hostUid: firebase.auth().currentUser.uid,
+            hostHeartbeat: firebase.firestore.FieldValue.serverTimestamp(),
+            status: "waiting",
+            playerCount: 0,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          });
+        });
+      } catch (e) {
+        if (e && e.codeTaken) continue;
+        callbacks.onError(e);
+        return;
+      }
+
+      roomCode = code;
+      roomRef = ref;
+      watchRoom();
+      startAsHost();
+      callbacks.onRoomCreated(code);
+      return;
     }
 
+    callbacks.onError(new Error("Não foi possível gerar um código de sala"));
+  }
+
+  async function joinRoomByCode(code) {
+    if (peer) { peer.destroy(); peer = null; }
+
+    const ref = db.collection("rooms").doc(code);
+    const snap = await ref.get();
+    const data = snap.exists ? snap.data() : null;
+
+    if (!isHostAlive(data)) {
+      callbacks.onRoomNotFound();
+      return;
+    }
+
+    roomCode = code;
+    roomRef = ref;
+    watchRoom();
+    connectAsClient(data.hostPeerId);
+  }
+
+  async function rejoinRoom() {
+    if (!roomRef) return;
     const snap = await roomRef.get();
     const data = snap.exists ? snap.data() : null;
 
     if (!isHostAlive(data)) {
-      await tryBecomeHost();
-    } else {
-      connectAsClient(data.hostPeerId);
-    }
-  }
-
-  async function tryBecomeHost() {
-    try {
-      await db.runTransaction(async (tx) => {
-        const doc = await tx.get(roomRef);
-        const data = doc.exists ? doc.data() : null;
-
-        if (isHostAlive(data)) {
-          throw { retryAsClient: data.hostPeerId };
-        }
-
-        tx.set(roomRef, {
-          hostPeerId: myPeerId,
-          hostHeartbeat: firebase.firestore.FieldValue.serverTimestamp(),
-          status: "waiting",
-          playerCount: 0,
-        });
-      });
-    } catch (e) {
-      if (e && e.retryAsClient) {
-        connectAsClient(e.retryAsClient);
-        return;
-      }
-      callbacks.onError(e);
+      setTimeout(rejoinRoom, 500 + Math.random() * 1000);
       return;
     }
 
-    startAsHost();
+    connectAsClient(data.hostPeerId);
   }
 
   function startAsHost() {
@@ -882,6 +916,7 @@ function endGame(reason) {
 
     roomRef.update({
       hostPeerId: myPeerId,
+      hostUid: firebase.auth().currentUser.uid,
       hostHeartbeat: firebase.firestore.FieldValue.serverTimestamp(),
       status: "waiting",
       playerCount: players.size,
@@ -974,7 +1009,9 @@ function endGame(reason) {
 
   return {
     init,
-    join,
+    createRoom,
+    joinRoomByCode,
+    rejoinRoom,
     changeRoom,
     setPlayerName,
     setPlayerColor,
@@ -985,18 +1022,11 @@ function endGame(reason) {
     toggleLight,
     useItem,
     isHostAlive,
-    on(name, fn) {
-      callbacks[name] = fn;
-    },
-    get isHost() {
-      return isHost;
-    },
-    get myPeerId() {
-      return myPeerId;
-    },
-    get myColor() {
-      return myColor;
-    },
+    on(name, fn) { callbacks[name] = fn; },
+    get isHost() { return isHost; },
+    get myPeerId() { return myPeerId; },
+    get myColor() { return myColor; },
+    get roomCode() { return roomCode; },
     MAX_PLAYERS,
     PLAYER_W,
     PLAYER_H,

@@ -5,8 +5,14 @@ document.addEventListener("deviceready", async () => {
 
 const statusEl = document.getElementById("status");
 const playerCountEl = document.getElementById("playerCount");
-const joinBtn = document.getElementById("joinBtn");
 const startBtn = document.getElementById("startBtn");
+const roomSelectEl = document.getElementById("roomSelect");
+const lobbyMainEl = document.getElementById("lobbyMain");
+const createRoomBtn = document.getElementById("createRoomBtn");
+const roomCodeInput = document.getElementById("roomCodeInput");
+const joinRoomBtn = document.getElementById("joinRoomBtn");
+const roomSelectStatus = document.getElementById("roomSelectStatus");
+const roomCodeDisplay = document.getElementById("roomCodeDisplay");
 const lobbyEl = document.getElementById("lobby");
 const gameEl = document.getElementById("game");
 const canvas = document.getElementById("canvas");
@@ -59,6 +65,20 @@ nameInput.addEventListener("input", (e) => {
   const val = e.target.value.slice(0, 15);
   localStorage.setItem("playerName", val);
   Network.setPlayerName(val);
+});
+
+createRoomBtn.addEventListener("click", () => {
+  createRoomBtn.disabled = true;
+  roomSelectStatus.textContent = "Criando sala...";
+  Network.createRoom();
+});
+
+joinRoomBtn.addEventListener("click", () => {
+  const code = roomCodeInput.value.trim().toUpperCase();
+  if (!code) return;
+  joinRoomBtn.disabled = true;
+  roomSelectStatus.textContent = "Procurando sala...";
+  Network.joinRoomByCode(code);
 });
 
 timeOptions.forEach((opt) => {
@@ -605,6 +625,18 @@ function drawToast() {
   ctx.restore();
 }
 
+Network.on("onRoomCreated", (code) => {
+  roomSelectEl.classList.add("hidden");
+  lobbyMainEl.classList.remove("hidden");
+  roomCodeDisplay.textContent = `Código da sala: ${code}`;
+});
+
+Network.on("onRoomNotFound", () => {
+  roomSelectStatus.textContent = "Sala não encontrada";
+  createRoomBtn.disabled = false;
+  joinRoomBtn.disabled = false;
+});
+
 Network.on("onRoomUpdate", (data) => {
   if (joined) return;
 
@@ -614,26 +646,25 @@ Network.on("onRoomUpdate", (data) => {
     statusEl.textContent = data
       ? "Entre e seja o dono"
       : "Sala vazia";
-    joinBtn.disabled = false;
     playerCountEl.textContent = "";
     return;
   }
 
   if (data.status === "playing") {
     statusEl.textContent = "Partida em andamento";
-    joinBtn.disabled = true;
     return;
   }
 
   const full = data.playerCount >= Network.MAX_PLAYERS;
   playerCountEl.textContent = `${data.playerCount}/${Network.MAX_PLAYERS} na sala`;
   statusEl.textContent = full ? "Sala cheia" : "Sala aberta";
-  joinBtn.disabled = full;
 });
 
 Network.on("onStateSync", (players) => {
   joined = true;
-  joinBtn.classList.add("hidden");
+  roomSelectEl.classList.add("hidden");
+  lobbyMainEl.classList.remove("hidden");
+  roomCodeDisplay.textContent = `Código da sala: ${Network.roomCode}`;
   lobbyLeaveBtn.classList.remove("hidden");
   renderPlayerList(players);
 
@@ -659,16 +690,14 @@ Network.on("onColorAssigned", () => {
 
 Network.on("onRoomFull", () => {
   statusEl.textContent = "Sala cheia, aguarde vaga";
-  joinBtn.disabled = true;
 });
 
 Network.on("onHostLost", () => {
   joined = false;
   statusEl.textContent = "Dono da sala desconectado. Reconectando...";
-  joinBtn.classList.remove("hidden");
   lobbyLeaveBtn.classList.add("hidden");
   startBtn.classList.add("hidden");
-  setTimeout(() => Network.join(), 500 + Math.random() * 1000);
+  setTimeout(() => Network.rejoinRoom(), 500 + Math.random() * 1000);
 });
 
 Network.on("onPromotedToHost", () => {
@@ -813,12 +842,6 @@ Network.on("onError", (err) => {
   statusEl.textContent = "Erro. Recarregue o jogo.";
 });
 
-joinBtn.addEventListener("click", () => {
-  joinBtn.disabled = true;
-  statusEl.textContent = "Conectando...";
-  Network.join();
-});
-
 startBtn.addEventListener("click", () => {
   Network.startGame(selectedDurationMin);
 });
@@ -903,8 +926,11 @@ startWorkerIntervalLocal(120, () => {
   wasPadUpPressed = gp.up;
 
   if (gp.confirm && !wasPadConfirmPressed) {
-    if (!joinBtn.classList.contains("hidden") && !joinBtn.disabled) joinBtn.click();
-    else if (!startBtn.classList.contains("hidden") && !startBtn.disabled) startBtn.click();
+    if (!roomSelectEl.classList.contains("hidden")) {
+      if (!createRoomBtn.disabled) createRoomBtn.click();
+    } else if (!startBtn.classList.contains("hidden") && !startBtn.disabled) {
+      startBtn.click();
+    }
   }
   wasPadConfirmPressed = gp.confirm;
 });
