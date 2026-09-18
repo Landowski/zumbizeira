@@ -239,8 +239,9 @@ canvas {
   align-items: center;
   background: rgba(16, 19, 15, 0.75);
   border-radius: 20px;
-  padding: 6px 16px;
+  padding: 6px 10px;
   z-index: 5;
+  font-size: .78rem;
 }
 
 #joystickZone {
@@ -269,7 +270,7 @@ canvas {
   transition: transform 0.05s ease;
 }
 
-#sprintBtn, #actionBtn, #whistleBtn {
+#sprintBtn, #actionBtn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -288,7 +289,7 @@ canvas {
   overflow: hidden;
 }
 
-#sprintBtn img, #actionBtn img, #whistleBtn img {
+#sprintBtn img, #actionBtn img {
     opacity: 0.4;
 }
 
@@ -303,10 +304,6 @@ canvas {
 
 #actionBtn {
   bottom: 100px !important;
-}
-
-#whistleBtn {
-  bottom: 160px !important;
 }
 
 

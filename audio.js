@@ -12,7 +12,6 @@ const SFX = {
   item: `${AUDIO_DIR}som-item.mp3`,
   itemUsado: `${AUDIO_DIR}som-item-usa.mp3`,
   banana: `${AUDIO_DIR}som-escorrega.mp3`,
-  assovio: `${AUDIO_DIR}som-assovio.mp3`,
 };
 
 const MUSIC_TRACKS = [1, 2, 3, 4, 5, 6].map((n) => `${AUDIO_DIR}musica-${n}.mp3`);

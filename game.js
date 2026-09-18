@@ -19,7 +19,6 @@ const joystickZone = document.getElementById("joystickZone");
 const joystickThumb = document.getElementById("joystickThumb");
 const sprintBtn = document.getElementById("sprintBtn");
 const actionBtn = document.getElementById("actionBtn");
-const whistleBtn = document.getElementById("whistleBtn");
 const actionBtnImg = actionBtn.querySelector("img");
 const lobbyLeaveBtn = document.getElementById("lobbyLeaveBtn");
 const gameOverEl = document.getElementById("gameOver");
@@ -108,6 +107,8 @@ const HIDING_OBJECTS_KEYS = new Set([
   "img/banheiro-planta.png_141_579",
   "img/banheiro-maquina.png_1028_167",
   "img/banheiro-armario.png_211_183",
+  "img/banheiro-vaso.png_499_179",
+   "img/banheiro-box.png_626_179",
 
   "img/rua-arbusto-baixo.png_357_663",
   "img/rua-arbusto-baixo.png_1017_663",
@@ -393,10 +394,10 @@ function drawPlayerSprite(p, isHidden = false) {
 
           ctx.strokeStyle = "#000000";
           ctx.lineWidth = 3;
-          ctx.strokeText(`⚡${secondsLeft}s`, nameX, counterY);
+          ctx.strokeText(`${secondsLeft}`, nameX, counterY);
 
           ctx.fillStyle = "#ffe066";
-          ctx.fillText(`⚡${secondsLeft}s`, nameX, counterY);
+          ctx.fillText(`${secondsLeft}`, nameX, counterY);
     }
 
     ctx.restore();
@@ -681,26 +682,8 @@ Network.on("onGameStart", (musicTrack) => {
   startMusic(musicTrack);
 });
 
-Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText, items, pickedItems, itemsUsed, bananaSlips, whistles }) => {
+Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText, items, pickedItems, itemsUsed, bananaSlips }) => {
   const me = players.find((p) => p.id === Network.myPeerId);
-
-  if (me) {
-    const survivorsInMyRoom = players.filter(
-      (p) => p.room === me.room && !p.infected
-    );
-    if (!me.infected && survivorsInMyRoom.length >= 2) {
-      whistleBtn.classList.remove("hidden");
-    } else {
-      whistleBtn.classList.add("hidden");
-    }
-    if (whistles && whistles.length > 0) {
-      whistles.forEach((w) => {
-        if (w.room === me.room && !me.infected) {
-          playSfx(SFX.assovio);
-        }
-      });
-    }
-  }
 
   if (me && pickedItems && pickedItems.length) {
     pickedItems.forEach((pi) => {
@@ -786,7 +769,7 @@ Network.on("onGameState", ({ players, timeLeft, roomLights, countdownText, items
   } else {
     timeHud.classList.remove("hidden");
     timerEl.classList.remove("hidden");
-    timerEl.textContent = `${timeLeft}s`;
+    timerEl.textContent = `${timeLeft}`;
   }
 
   if (me) {
@@ -811,10 +794,9 @@ Network.on("onGameOver", ({ reason, survivors }) => {
       ? youSurvived
         ? "Você sobreviveu!" : "Os zumbis venceram."
       : youSurvived
-      ? `Tempo esgotado!<br>Você e mais ${Math.max(0, survivors.length - 1)} sobreviveram!`
-      : `Tempo esgotado!<br>Os zumbis perderam.`;
+      ? `Você e mais ${Math.max(0, survivors.length - 1)} sobreviveram!`
+      : `Os zumbis perderam.`;
 
-  whistleBtn.classList.add("hidden");
   actionBtn.classList.add("hidden");
   restartBtn.classList.toggle("hidden", !Network.isHost);
   if (Network.isHost) {
@@ -865,6 +847,67 @@ function keyboardVector() {
   if (keys.has("arrowdown") || keys.has("s")) dy += 1;
   return { dx, dy };
 }
+
+let wasPadLeftPressed = false;
+let wasPadRightPressed = false;
+let wasPadUpPressed = false;
+let wasPadDownPressed = false;
+let wasPadConfirmPressed = false;
+
+function lobbyGamepadVector() {
+  const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+  const gp = Array.from(gamepads).find((g) => g !== null);
+  if (!gp) return null;
+
+  const axisX = gp.axes[0] || 0;
+  const axisY = gp.axes[1] || 0;
+  const deadzone = 0.5;
+
+  return {
+    left: (gp.buttons[14] && gp.buttons[14].pressed) || axisX < -deadzone,
+    right: (gp.buttons[15] && gp.buttons[15].pressed) || axisX > deadzone,
+    up: (gp.buttons[12] && gp.buttons[12].pressed) || axisY < -deadzone,
+    down: (gp.buttons[13] && gp.buttons[13].pressed) || axisY > deadzone,
+    confirm: !!(gp.buttons[0] && gp.buttons[0].pressed),
+  };
+}
+
+function cycleCharacter(dir) {
+  const opts = Array.from(characterOptions);
+  const current = opts.findIndex((o) => o.classList.contains("selected"));
+  opts[(current + dir + opts.length) % opts.length].click();
+}
+
+function cycleTime(dir) {
+  const opts = Array.from(timeOptions);
+  const current = opts.findIndex((o) => o.classList.contains("selected"));
+  opts[(current + dir + opts.length) % opts.length].click();
+}
+
+startWorkerIntervalLocal(120, () => {
+  if (lobbyEl.classList.contains("hidden")) return;
+
+  const gp = lobbyGamepadVector();
+  if (!gp) return;
+
+  if (gp.right && !wasPadRightPressed) cycleCharacter(1);
+  if (gp.left && !wasPadLeftPressed) cycleCharacter(-1);
+  wasPadRightPressed = gp.right;
+  wasPadLeftPressed = gp.left;
+
+  if (!timeEl.classList.contains("hidden")) {
+    if (gp.down && !wasPadDownPressed) cycleTime(1);
+    if (gp.up && !wasPadUpPressed) cycleTime(-1);
+  }
+  wasPadDownPressed = gp.down;
+  wasPadUpPressed = gp.up;
+
+  if (gp.confirm && !wasPadConfirmPressed) {
+    if (!joinBtn.classList.contains("hidden") && !joinBtn.disabled) joinBtn.click();
+    else if (!startBtn.classList.contains("hidden") && !startBtn.disabled) startBtn.click();
+  }
+  wasPadConfirmPressed = gp.confirm;
+});
 
 function gamepadVector() {
   const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -1001,13 +1044,6 @@ function updateActionButtonState(me) {
   }
 }
 
-function triggerWhistle() {
-  const me = latestState.find((p) => p.id === Network.myPeerId);
-  if (me && !me.infected) {
-    Network.whistle();
-  }
-}
-
 let sprintHeld = false;
 let actionTriggered = false;
 
@@ -1030,12 +1066,6 @@ sprintBtn.addEventListener("touchend", () => (sprintHeld = false));
 sprintBtn.addEventListener("touchcancel", () => (sprintHeld = false));
 sprintBtn.addEventListener("mousedown", () => (sprintHeld = true));
 window.addEventListener("mouseup", () => (sprintHeld = false));
-
-whistleBtn.addEventListener("touchstart", (e) => {
-  e.preventDefault();
-  triggerWhistle();
-}, { passive: false });
-whistleBtn.addEventListener("click", triggerWhistle);
 
 actionBtn.addEventListener("touchstart", (e) => {
   e.preventDefault();
@@ -1111,6 +1141,21 @@ function drawFrame() {
       room.lightSwitch.x,
       room.lightSwitch.y
     );
+
+    const secondsLeft = Math.max(0, Math.ceil((lights.blackoutEndsAt - Date.now()) / 1000));
+    ctx.save();
+    ctx.font = '20px "Press Start 2P", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    const swX = room.lightSwitch.x + room.lightSwitch.w / 2;
+    const swY = room.lightSwitch.y - 10;
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 4;
+    ctx.strokeText(`${secondsLeft}`, swX, swY);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(`${secondsLeft}`, swX, swY);
+    ctx.restore();
+
     drawToast();
     return;
   }
